@@ -1,0 +1,50 @@
+AICAIML — Applied Robotics & Autonomous Systems
+Full Syllabus & Lab Guide (Member Resource)
+=================================================
+
+COURSE OVERVIEW
+---------------
+A hands-on curriculum covering the core disciplines behind building an
+autonomous rover, culminating in a capstone build inside the AICAIML
+sandbox labs.
+
+MODULE BREAKDOWN
+-----------------
+1. Sensor Fusion Fundamentals
+   - Combining IMU, LiDAR, and camera data
+   - Kalman filtering basics
+   - Handling sensor noise and dropout
+
+2. Path Planning Algorithms
+   - A* search over occupancy grids
+   - Rapidly-exploring Random Trees (RRT)
+   - Planning under partial map information
+
+3. Control Theory for Robotics
+   - PID control loops
+   - Tuning for stability vs responsiveness
+   - Common failure modes: overshoot and oscillation
+
+4. ROS Fundamentals
+   - Nodes, topics, and services
+   - Publish/subscribe messaging patterns
+   - Debugging a ROS-based robotics stack
+
+5. Capstone Rover Build
+   - Assembling sensing, planning, and control into one pipeline
+   - Sandbox lab access and safety guidelines
+   - Demo day evaluation criteria
+
+LAB ACCESS
+----------
+Sandbox lab scheduling and safety briefing details are shared with
+active members via the events calendar. Contact your state chapter
+coordinator to book lab time.
+
+ASSESSMENT
+----------
+Complete the in-course quiz (3 questions, 70% pass mark) to mark this
+course complete and become eligible for the AICAIML certificate for
+this track.
+
+— AICAIML Learning & Certification Board

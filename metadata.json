@@ -1,0 +1,6 @@
+{
+  "name": "AICAIML Portal",
+  "description": "All India Council for Artificial Intelligence and Machine Learning - National professional council advancing AI, ML, and Robotics through education, research, innovation, and industry-academia collaboration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,52 @@
+AICAIML — Generative AI & Large Language Models
+Full Syllabus & Reading List (Member Resource)
+=================================================
+
+COURSE OVERVIEW
+---------------
+This course takes you from foundational transformer architecture to
+building and safely deploying applications on top of large language
+models. It is designed for learners with basic Python and machine
+learning familiarity.
+
+MODULE BREAKDOWN
+-----------------
+1. The Transformer Architecture
+   - Self-attention and multi-head attention
+   - Positional encoding
+   - Why transformers replaced RNNs for sequence tasks
+
+2. Prompt Engineering Patterns
+   - Zero-shot vs few-shot prompting
+   - Chain-of-thought reasoning
+   - Structured output (JSON mode, function calling)
+
+3. Fine-Tuning vs Retrieval-Augmented Generation
+   - When fine-tuning is worth the cost
+   - Parameter-efficient fine-tuning (LoRA, adapters)
+   - When RAG solves the problem more cheaply
+
+4. Building a RAG Pipeline
+   - Document chunking strategies
+   - Embeddings and vector search
+   - Grounding responses in retrieved context
+
+5. Deployment & Safety
+   - Rate limiting and cost control
+   - Prompt injection defenses
+   - Monitoring and evaluating model output in production
+
+SUGGESTED FURTHER READING
+--------------------------
+- Official documentation for your chosen model provider's API
+- Papers introducing the transformer architecture and attention
+  mechanisms (search "Attention Is All You Need")
+- AICAIML's published Responsible AI & Ethics guidance
+
+ASSESSMENT
+----------
+Complete the in-course quiz (3 questions, 70% pass mark) to mark this
+course complete and become eligible for the AICAIML certificate for
+this track.
+
+— AICAIML Learning & Certification Board

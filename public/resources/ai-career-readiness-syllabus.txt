@@ -1,0 +1,45 @@
+AICAIML — AI Career Readiness & Certification Track
+Full Syllabus & Interview Guide (Member Resource)
+=================================================
+
+COURSE OVERVIEW
+---------------
+Turns technical skill into a hireable portfolio, and guides you
+through the AICAIML professional certification pathway.
+
+MODULE BREAKDOWN
+-----------------
+1. Building a Portfolio That Gets Noticed
+   - What reviewers screen for first
+   - Common gaps that get applications filtered out
+   - Presenting honest, well-scoped results over inflated claims
+
+2. Technical Interview Preparation
+   - Structuring answers under time pressure
+   - System-design reasoning for ML applications
+   - Practice question bank and self-review checklist
+
+3. Certification Exam Format
+   - Coverage areas and scoring breakdown
+   - Time allocation and pacing strategy
+   - Retake policy
+
+4. Verified Credentialing
+   - How certificates are issued after passing
+   - Unique verification code format
+   - How employers can confirm a certificate is genuine
+
+INTERVIEW ANSWER STRUCTURE (QUICK REFERENCE)
+---------------------------------------------
+1. Clarify requirements and constraints before proposing a solution
+2. State assumptions explicitly
+3. Walk through trade-offs, not just one "correct" answer
+4. Close with how you would validate the solution works
+
+ASSESSMENT
+----------
+Complete the in-course quiz (3 questions, 70% pass mark) to mark this
+course complete and become eligible for the AICAIML certificate for
+this track.
+
+— AICAIML Learning & Certification Board

@@ -1,0 +1,262 @@
+/* Lora/Inter are now loaded via <link rel="preconnect"> + <link rel="stylesheet">
+   in index.html, not this @import — a CSS @import is render-blocking and only
+   gets discovered after the whole stylesheet parses, putting the font request
+   at the very end of the loading waterfall. */
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Lora", serif;
+
+  --color-navy: #0A1B33;
+  --color-corp-blue: #14335F;
+  --color-accent-sky: #17A6C4;
+  --color-pale-blue: #EEF4F9;
+  --color-gold: #0D6E86;
+  --color-light-grey: #F4F7FA;
+  --color-slate-grey: #64748B;
+  --color-near-black: #101826;
+
+  /* Formalizes the gold-hover shade that was previously hardcoded as #B37612
+     in 7+ files (Home, Header, Courses, EventsProjects, Benefits,
+     MembershipPlans, MembershipForms, Login) — one token, one source of truth. */
+  --color-gold-dark: #B37612;
+
+  /* Neutral ramp — fills the gap between pale-blue/light-grey and near-black
+     so cards, borders and muted text stop inventing one-off grays per file. */
+  --color-gray-50: #F7F8FA;
+  --color-gray-100: #EEF1F5;
+  --color-gray-200: #DDE3EA;
+  --color-gray-300: #C3CCD6;
+  --color-gray-500: #7C8896;
+  --color-gray-700: #3D4A5C;
+
+  /* Semantic status colors — used for success/warning/danger states across
+     forms, badges and admin views, kept distinct from the brand accent. */
+  --color-success: #0F8A5F;
+  --color-success-soft: #E7F5EF;
+  --color-warning: #B37612;
+  --color-warning-soft: #FBF1E2;
+  --color-danger: #C1403D;
+  --color-danger-soft: #FBEAEA;
+}
+
+/* Elevation scale — replaces one-off shadow values duplicated across
+   .polished-card and inline classes. sm = resting, md = hover/active,
+   lg = modal/popover. */
+:root {
+  --shadow-sm: 0 1px 2px rgba(10, 27, 51, 0.06);
+  --shadow-md: 0 12px 24px rgba(10, 27, 51, 0.08);
+  --shadow-lg: 0 20px 48px rgba(10, 27, 51, 0.16);
+}
+
+/* Custom animation utility for smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #FFFFFF;
+  color: var(--color-near-black);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Reset the browser default border/padding/min-width on <fieldset> — used to
+   group radio/checkbox options (MembershipForms) with real <legend> semantics
+   instead of a bare <div>+<label>, without inheriting the UA chrome. */
+fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+legend {
+  padding: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.02em;
+}
+
+/* High-contrast and smooth text selection */
+::selection {
+  background-color: rgba(23, 166, 196, 0.16);
+  color: #0A1B33;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F4F7FA;
+}
+::-webkit-scrollbar-thumb {
+  background: #17A6C4;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #0D6E86;
+}
+
+/* Polished Interactive Input focus shadows */
+input[type="text"], 
+input[type="email"], 
+input[type="tel"], 
+input[type="password"], 
+input[type="date"], 
+select, 
+textarea {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="tel"]:focus,
+input[type="password"]:focus,
+input[type="date"]:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--color-accent-sky) !important;
+  box-shadow: 0 0 0 3px rgba(23, 166, 196, 0.14) !important;
+  outline: none !important;
+}
+
+/* Global button click feedback and smoother transitions */
+button, a {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Visible keyboard focus — buttons/links previously had no focus indicator
+   at all (inputs only had a box-shadow). Mouse/touch clicks stay clean since
+   :focus-visible only engages for keyboard and programmatic focus. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-accent-sky);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Skip-to-content link — visually hidden until it receives keyboard focus,
+   so keyboard users can bypass the header nav on every page. */
+.skip-link {
+  position: absolute;
+  top: -48px;
+  left: 12px;
+  z-index: 100;
+  background: var(--color-navy);
+  color: #FFFFFF;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: top 0.15s ease-out;
+}
+
+.skip-link:focus {
+  top: 12px;
+}
+
+/* Respect the user's reduced-motion preference across every animation and
+   transition on the site, not just the gradient-text sweep. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Premium Card hover style wrapper */
+.polished-card {
+  background-color: #FFFFFF;
+  border: 1px solid rgba(10, 27, 51, 0.08);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.polished-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: rgba(23, 166, 196, 0.25);
+}
+
+/* Animated gradient text — subtle color sweep for hero titles and page headers */
+@keyframes gradientFlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.text-gradient-animate,
+.text-gradient-animate-light {
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: gradientFlow 6s ease-in-out infinite;
+}
+
+/* For headings on light/white backgrounds */
+.text-gradient-animate {
+  background-image: linear-gradient(90deg, var(--color-navy) 0%, var(--color-corp-blue) 25%, var(--color-accent-sky) 50%, var(--color-gold) 75%, var(--color-navy) 100%);
+}
+
+/* For headings on dark navy hero sections */
+.text-gradient-animate-light {
+  background-image: linear-gradient(90deg, #FFFFFF 0%, var(--color-accent-sky) 30%, var(--color-gold) 55%, #FFFFFF 80%, #FFFFFF 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-gradient-animate,
+  .text-gradient-animate-light {
+    animation: none;
+    background-position: 0% 50%;
+  }
+}
+
+/* Animation classes */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slideup {
+  animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Certificate-only printing: hide the entire page except the certificate
+   itself when the user prints (e.g. "Print / Save Certificate as PDF"). */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .certificate-print-area,
+  .certificate-print-area * {
+    visibility: visible;
+  }
+  .certificate-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    box-shadow: none !important;
+  }
+}

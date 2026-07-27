@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  This app is a client-side hash router (#courses, #membership, etc.) served
+  entirely from a single index.html at "/". Search engines do not treat
+  fragment-identifier URLs as distinct crawlable pages, so listing
+  "/#courses", "/#membership" etc. here would not actually help indexing —
+  only the root URL is genuinely a separate, crawlable resource under this
+  architecture. Getting each route independently indexed requires migrating
+  to real paths with server-side rendering or prerendering, which is a larger
+  change than this pass covers (see the redesign plan's SEO section).
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://www.aicaiml.org/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

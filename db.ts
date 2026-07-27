@@ -1,0 +1,479 @@
+import { supabase } from './lib/supabase';
+import { initialNews, initialCourses, initialProjects, initialEvents, initialPartners, initialTestimonials } from './src/cmsData';
+import crypto from 'crypto';
+
+// Supabase-backed data access layer. All functions return Promises, so
+// callers in server.ts must await them.
+
+// --- Enquiries ---
+export async function insertEnquiry(enquiry: { id: string; name: string; email: string; phone?: string; message: string; submittedAt: string }) {
+  const { error } = await supabase.from('enquiries').insert({
+    id: enquiry.id,
+    name: enquiry.name,
+    email: enquiry.email,
+    phone: enquiry.phone || null,
+    message: enquiry.message,
+    submitted_at: enquiry.submittedAt
+  });
+  if (error) throw error;
+}
+
+export function getAllEnquiries() {
+  return supabase.from('enquiries').select('*').order('submitted_at', { ascending: false });
+}
+
+// --- Applications ---
+export async function insertApplication(app: { id: string; membershipNo: string; category: string; name: string; email: string; formData: unknown; submittedAt: string; verificationCode?: string }) {
+  const { error } = await supabase.from('applications').insert({
+    id: app.id,
+    membership_no: app.membershipNo,
+    category: app.category,
+    name: app.name,
+    email: app.email,
+    form_data: app.formData,
+    submitted_at: app.submittedAt,
+    verification_code: app.verificationCode || null
+  });
+  if (error) throw error;
+}
+
+export async function verifyApplicationEmail(id: string, code: string) {
+  const { data, error } = await supabase.from('applications').select('*').eq('id', id).single();
+  if (error || !data) return { success: false, error: 'Application not found.' };
+  if (data.verification_code !== code) return { success: false, error: 'Invalid verification code.' };
+  if (data.email_verified === 'true') return { success: false, error: 'Email is already verified.' };
+  const { error: updateError } = await supabase.from('applications').update({ email_verified: 'true' }).eq('id', id);
+  if (updateError) return { success: false, error: updateError.message };
+  return { success: true };
+}
+
+export function getAllApplications() {
+  return supabase.from('applications').select('*').order('submitted_at', { ascending: false });
+}
+
+export function getApplicationById(id: string) {
+  return supabase.from('applications').select('*').eq('id', id).single();
+}
+
+export async function updateApplicationStatus(id: string, status: 'Pending' | 'Approved' | 'Rejected', approvalDate?: string) {
+  const payload: Record<string, string | null> = { status };
+  if (approvalDate) payload.approval_date = approvalDate;
+  payload.reviewed_at = new Date().toISOString();
+  const { data, error } = await supabase.from('applications').update(payload).eq('id', id).select('*').single();
+  if (error) throw error;
+  return data;
+}
+
+// --- Event Registrations ---
+export async function insertEventRegistration(reg: {
+  id: string;
+  eventId: string;
+  eventTitle: string;
+  name: string;
+  email: string;
+  phone?: string;
+  organization?: string;
+  designation?: string;
+  registeredAt: string;
+}) {
+  const { error } = await supabase.from('event_registrations').insert({
+    id: reg.id,
+    event_id: reg.eventId,
+    event_title: reg.eventTitle,
+    name: reg.name,
+    email: reg.email,
+    phone: reg.phone || null,
+    organization: reg.organization || null,
+    designation: reg.designation || null,
+    registered_at: reg.registeredAt
+  });
+  if (error) throw error;
+}
+
+export function getAllEventRegistrations() {
+  return supabase.from('event_registrations').select('*').order('registered_at', { ascending: false });
+}
+
+// --- News ---
+export function getNews() {
+  return supabase.from('news').select('id, title, summary, date, category, read_time as readTime, created_at').order('created_at', { ascending: false });
+}
+
+export async function insertNewsArticle(article: { id: string; title: string; summary: string; date: string; category: string; readTime: string }) {
+  const { error } = await supabase.from('news').insert({
+    id: article.id,
+    title: article.title,
+    summary: article.summary,
+    date: article.date,
+    category: article.category,
+    read_time: article.readTime,
+    created_at: new Date().toISOString()
+  });
+  if (error) throw error;
+}
+
+// --- Memberships ---
+export async function insertMembershipPayment(payment: {
+  id: string;
+  membershipNo: string;
+  planId: string;
+  planName: string;
+  price: number;
+  name: string;
+  email: string;
+  phone?: string;
+  paymentMethod: string;
+  paymentRef: string;
+  status: string;
+  paidAt: string;
+}) {
+  const { error } = await supabase.from('memberships').insert({
+    id: payment.id,
+    membership_no: payment.membershipNo,
+    plan_id: payment.planId,
+    plan_name: payment.planName,
+    price: payment.price,
+    name: payment.name,
+    email: payment.email,
+    phone: payment.phone || null,
+    payment_method: payment.paymentMethod,
+    payment_ref: payment.paymentRef,
+    status: payment.status,
+    paid_at: payment.paidAt
+  });
+  if (error) throw error;
+}
+
+export function getMembershipByNo(membershipNo: string) {
+  return supabase.from('memberships').select('*').eq('membership_no', membershipNo).single();
+}
+
+export function getAllMemberships() {
+  return supabase.from('memberships').select('*').order('paid_at', { ascending: false });
+}
+
+// --- Certificates ---
+export async function insertCertificate(cert: { code: string; userId: string; userName: string; courseId: string; courseTitle: string; issuedAt: string }) {
+  const { error } = await supabase.from('certificates').insert({
+    code: cert.code,
+    user_id: cert.userId,
+    user_name: cert.userName,
+    course_id: cert.courseId,
+    course_title: cert.courseTitle,
+    issued_at: cert.issuedAt
+  });
+  if (error && error.code !== '23505') throw error; // Ignore duplicate key
+}
+
+export function getCertificateByCode(code: string) {
+  return supabase.from('certificates').select('*').eq('code', code).single();
+}
+
+// --- Courses ---
+export function getCourses() {
+  return supabase.from('courses').select('*').order('created_at', { ascending: false });
+}
+
+export async function insertCourse(course: {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  level: string;
+  duration: string;
+  modules: number;
+  access: string;
+  image?: string;
+  topics: string[];
+}) {
+  const { error } = await supabase.from('courses').insert({
+    id: course.id,
+    title: course.title,
+    description: course.description,
+    category: course.category,
+    level: course.level,
+    duration: course.duration,
+    modules: course.modules,
+    access: course.access,
+    image: course.image || null,
+    topics: course.topics,
+    free_content: null,
+    premium_content: null,
+    created_at: new Date().toISOString()
+  });
+  if (error) throw error;
+}
+
+export function deleteCourse(id: string) {
+  return supabase.from('courses').delete().eq('id', id);
+}
+
+// --- Projects ---
+export function getProjects() {
+  return supabase.from('projects').select('*').order('created_at', { ascending: false });
+}
+
+export async function insertProject(project: {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  image?: string;
+  status: string;
+  impact: string;
+}) {
+  const { error } = await supabase.from('projects').insert({
+    id: project.id,
+    title: project.title,
+    description: project.description,
+    category: project.category,
+    image: project.image || null,
+    status: project.status,
+    impact: project.impact,
+    created_at: new Date().toISOString()
+  });
+  if (error) throw error;
+}
+
+export function deleteProject(id: string) {
+  return supabase.from('projects').delete().eq('id', id);
+}
+
+// --- Events ---
+export function getEvents() {
+  return supabase.from('events').select('*').order('created_at', { ascending: false });
+}
+
+export async function insertEvent(event: {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  venue: string;
+  category: string;
+}) {
+  const { error } = await supabase.from('events').insert({
+    id: event.id,
+    title: event.title,
+    description: event.description,
+    date: event.date,
+    time: event.time,
+    venue: event.venue,
+    category: event.category,
+    created_at: new Date().toISOString()
+  });
+  if (error) throw error;
+}
+
+export function deleteEvent(id: string) {
+  return supabase.from('events').delete().eq('id', id);
+}
+
+// --- Partners ---
+export function getPartners() {
+  return supabase.from('partners').select('id, name, type, logo_placeholder as logoPlaceholder, created_at').order('created_at', { ascending: false });
+}
+
+export async function insertPartner(partner: {
+  id: string;
+  name: string;
+  type: string;
+  logoPlaceholder: string;
+}) {
+  const { error } = await supabase.from('partners').insert({
+    id: partner.id,
+    name: partner.name,
+    type: partner.type,
+    logo_placeholder: partner.logoPlaceholder,
+    created_at: new Date().toISOString()
+  });
+  if (error) throw error;
+}
+
+export function deletePartner(id: string) {
+  return supabase.from('partners').delete().eq('id', id);
+}
+
+// --- Testimonials ---
+export function getTestimonials() {
+  return supabase.from('testimonials').select('id, name, designation, organization, quote, avatar_url as avatarUrl, created_at').order('created_at', { ascending: false });
+}
+
+export async function insertTestimonial(testimonial: {
+  id: string;
+  name: string;
+  designation: string;
+  organization: string;
+  quote: string;
+  avatarUrl: string;
+}) {
+  const { error } = await supabase.from('testimonials').insert({
+    id: testimonial.id,
+    name: testimonial.name,
+    designation: testimonial.designation,
+    organization: testimonial.organization,
+    quote: testimonial.quote,
+    avatar_url: testimonial.avatarUrl,
+    created_at: new Date().toISOString()
+  });
+  if (error) throw error;
+}
+
+export function deleteTestimonial(id: string) {
+  return supabase.from('testimonials').delete().eq('id', id);
+}
+
+// --- Users ---
+export interface PublicUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  membershipPlan: string | null;
+  membershipStatus: string;
+  permissions: string[];
+}
+
+function toPublicUser(row: any): PublicUser {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    membershipPlan: row.membership_plan,
+    membershipStatus: row.membership_status,
+    permissions: Array.isArray(row.permissions) ? row.permissions : JSON.parse(row.permissions || '[]')
+  };
+}
+
+export async function createUser(user: {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+  membershipPlan?: string | null;
+  membershipStatus: string;
+  permissions: string[];
+}): Promise<PublicUser> {
+  const { hash, salt } = hashPassword(user.password);
+  const { data, error } = await supabase.from('users').insert({
+    id: user.id,
+    name: user.name,
+    email: user.email.toLowerCase(),
+    password_hash: hash,
+    password_salt: salt,
+    role: user.role,
+    membership_plan: user.membershipPlan || null,
+    membership_status: user.membershipStatus,
+    permissions: user.permissions,
+    created_at: new Date().toISOString()
+  }).select('*').single();
+  
+  if (error) throw error;
+  return toPublicUser(data);
+}
+
+export async function getUserByEmail(email: string): Promise<PublicUser | undefined> {
+  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase()).single();
+  if (error || !data) return undefined;
+  return toPublicUser(data);
+}
+
+export async function verifyCredentials(email: string, password: string): Promise<PublicUser | null> {
+  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase()).single();
+  if (error || !data) return null;
+  if (!verifyPassword(password, data.password_hash, data.password_salt)) return null;
+  return toPublicUser(data);
+}
+
+export async function updateUserPassword(email: string, currentPassword: string, newPassword: string): Promise<boolean> {
+  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase()).single();
+  if (error || !data) return false;
+  if (!verifyPassword(currentPassword, data.password_hash, data.password_salt)) return false;
+  const { hash, salt } = hashPassword(newPassword);
+  const { error: updateError } = await supabase.from('users').update({
+    password_hash: hash,
+    password_salt: salt
+  }).eq('email', email.toLowerCase());
+  return !updateError;
+}
+
+// --- Sessions ---
+export async function createSession(userId: string): Promise<{ token: string; expiresAt: string }> {
+  const token = crypto.randomBytes(32).toString('hex');
+  const createdAt = new Date();
+  const expiresAt = new Date(createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const { error } = await supabase.from('sessions').insert({
+    token,
+    user_id: userId,
+    created_at: createdAt.toISOString(),
+    expires_at: expiresAt.toISOString()
+  });
+  if (error) throw error;
+  return { token, expiresAt: expiresAt.toISOString() };
+}
+
+export async function getSessionUser(token: string): Promise<PublicUser | null> {
+  if (!token) return null;
+  const { data: session, error: sessionError } = await supabase.from('sessions').select('*').eq('token', token).single();
+  if (sessionError || !session) return null;
+  
+  if (new Date(session.expires_at) < new Date()) {
+    await supabase.from('sessions').delete().eq('token', token);
+    return null;
+  }
+  
+  const { data: user, error: userError } = await supabase.from('users').select('*').eq('id', session.user_id).single();
+  if (userError || !user) return null;
+  return toPublicUser(user);
+}
+
+export async function deleteSession(token: string) {
+  const { error } = await supabase.from('sessions').delete().eq('token', token);
+  if (error) console.error('Failed to delete session:', error);
+}
+
+export async function seedDevUser() {
+  const existing = await getUserByEmail('developer@aicaiml.org');
+  if (existing) return existing;
+  return createUser({
+    id: 'user-dev-001',
+    name: 'Developer',
+    email: 'developer@aicaiml.org',
+    password: 'Test@123456',
+    role: 'admin',
+    membershipPlan: 'Premium',
+    membershipStatus: 'active',
+    permissions: [
+      'access_premium_courses',
+      'access_course_videos',
+      'access_downloadable_resources',
+      'access_quizzes',
+      'access_certificates',
+      'access_members_only_pages'
+    ]
+  });
+}
+
+// --- Password helpers ---
+function hashPassword(password: string): { hash: string; salt: string } {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return { hash, salt };
+}
+
+function verifyPassword(password: string, hash: string, salt: string): boolean {
+  const candidate = crypto.scryptSync(password, salt, 64);
+  const stored = Buffer.from(hash, 'hex');
+  return candidate.length === stored.length && crypto.timingSafeEqual(candidate, stored);
+}
+
+export function getAllUsers() {
+  return supabase.from('users').select('*').order('created_at', { ascending: false });
+}
+
+export function getNewsByCursor() {
+  return supabase.from('news').select('*').order('created_at', { ascending: false });
+}
