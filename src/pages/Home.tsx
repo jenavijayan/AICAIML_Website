@@ -145,7 +145,7 @@ export default function Home({
             </h1>
 
             <p className="text-base md:text-lg text-slate-200 leading-relaxed">
-              We are a mission-led council committed to making artificial intelligence accessible, ethical, and impactful for every individual, institute, and industry across India and beyond.
+              The Apex Body of Artificial Intelligence & Machine Learning Building India’s AI & ML Future. The All India Council for Artificial Intelligence & Machine Learning (AICAIML) builds a comprehensive ecosystem that fosters AI innovation — democratizing AI access, promoting ethical and responsible AI, and developing indigenous AI capabilities in alignment with the Government of India’s AI Mission.
             </p>
 
             <div className="flex items-center gap-2 text-sm font-semibold text-white/90 pt-1">
