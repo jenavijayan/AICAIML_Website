@@ -33,7 +33,9 @@ CREATE TABLE IF NOT EXISTS public.enquiries (
   email TEXT NOT NULL,
   phone TEXT,
   message TEXT NOT NULL,
-  submitted_at TEXT NOT NULL
+  submitted_at TEXT NOT NULL,
+  email_verified TEXT NOT NULL DEFAULT 'false',
+  verification_code TEXT
 );
 
 -- 4. Applications table (membership applications)
@@ -62,7 +64,9 @@ CREATE TABLE IF NOT EXISTS public.event_registrations (
   phone TEXT,
   organization TEXT,
   designation TEXT,
-  registered_at TEXT NOT NULL
+  registered_at TEXT NOT NULL,
+  email_verified TEXT NOT NULL DEFAULT 'false',
+  verification_code TEXT
 );
 
 -- 6. News table
@@ -89,7 +93,9 @@ CREATE TABLE IF NOT EXISTS public.memberships (
   payment_method TEXT NOT NULL,
   payment_ref TEXT NOT NULL,
   status TEXT NOT NULL,
-  paid_at TEXT NOT NULL
+  paid_at TEXT NOT NULL,
+  email_verified TEXT NOT NULL DEFAULT 'false',
+  verification_code TEXT
 );
 
 -- 8. Courses table

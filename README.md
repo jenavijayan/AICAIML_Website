@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # AICAIML — All India Council for Artificial Intelligence & Machine Learning
 
 A full-stack website for AICAIML, an online learning organization offering AI, Machine Learning, and Robotics courses to students, individuals, and institutions. The platform combines a public marketing site with a real membership/course system: authenticated logins, gated course content with anti-skip video and read-tracking, auto-issued certificates, a public certificate/membership verification tool, and a full admin dashboard for managing content and registrations.
@@ -292,7 +291,3 @@ You can also create additional admin users from the Admin Dashboard > Registered
 ## License
 
 Private / Proprietary — All India Council for Artificial Intelligence & Machine Learning (AICAIML)
-=======
-# AICAIML_20260727
-UPDATED ONE
->>>>>>> 28dd06ab3a886144d5d504eb89349dab333dc382

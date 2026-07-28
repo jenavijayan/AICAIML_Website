@@ -83,6 +83,11 @@ export default function Footer({ setCurrentPage }: FooterProps) {
                 </button>
               </li>
               <li>
+                <button onClick={() => handlePageClick('benefits-view')} className="hover:text-gold transition-colors text-left w-full">
+                  Membership Benefits
+                </button>
+              </li>
+              <li>
                 <button onClick={() => handlePageClick('verification')} className="hover:text-gold transition-colors text-left w-full">
                   Verify Certificate / Membership
                 </button>

@@ -4,6 +4,8 @@ import {
 } from 'lucide-react';
 import { Button, Card, TextField, PageHero } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
+import { useFormVerification } from '../hooks/useFormVerification';
+import EmailVerification from '../components/EmailVerification';
 
 export default function Contact() {
   useDocumentMeta('Contact', 'Reach the AICAIML Executive Secretariat for course support, institutional registrations, or general enquiries.');
@@ -13,29 +15,67 @@ export default function Contact() {
   const [success, setSuccess] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setSuccess(null);
-    setError(null);
+  const { step: verificationStep, verificationCode, requestCode, confirmCode, reset: resetVerification, message: verificationMessage, setVerificationCode, isConfirming } = useFormVerification({
+    email: form.email,
+    onVerified: () => {
+      submitVerifiedForm();
+    }
+  });
 
+  const submitVerifiedForm = async () => {
+    setLoading(true);
+    setError(null);
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
       const response = await fetch('/api/enquiry/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, honeypot })
+        body: JSON.stringify({ ...form, honeypot }),
+        signal: controller.signal,
+        credentials: 'include'
       });
+      clearTimeout(timeoutId);
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || 'Failed to submit enquiry.');
       }
       setSuccess(data);
       setForm({ name: '', email: '', phone: '', message: '' });
+      resetVerification();
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred.');
+      if (err.name === 'AbortError') {
+        setError('Request timed out. Please check your connection and try again.');
+      } else {
+        setError(err.message || 'An unexpected error occurred.');
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSuccess(null);
+    setError(null);
+    if (!form.email) {
+      setError('Please provide your email address.');
+      return;
+    }
+    if (verificationStep === 'verified') {
+      await submitVerifiedForm();
+      return;
+    }
+    const sent = await requestCode();
+    if (!sent) {
+      setError('Failed to send verification code. Please try again.');
+    }
+  };
+
+  const handleResetVerification = () => {
+    resetVerification();
+    setSuccess(null);
+    setError(null);
   };
 
   return (
@@ -152,16 +192,17 @@ export default function Contact() {
                         <p className="text-xs text-emerald-700 mt-1">Your query has been recorded. Reference ID: <strong>{success.referenceId}</strong></p>
                       </div>
                     </div>
+
                     <div className="bg-slate-900 text-slate-200 p-3 rounded font-mono text-[10px] leading-relaxed whitespace-pre-wrap">
                       {success.emailLog}
                     </div>
-                    <Button variant="ghost" className="w-full justify-center bg-slate-100 hover:bg-slate-200" onClick={() => setSuccess(null)}>
+                    <Button variant="ghost" className="w-full justify-center bg-slate-100 hover:bg-slate-200" onClick={() => { setSuccess(null); setForm({ name: '', email: '', phone: '', message: '' }); }}>
                       Submit Another Enquiry
                     </Button>
                   </div>
                 </Card>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-4">
                   {error && (
                     <div role="alert" className="bg-rose-50 text-rose-800 p-3 rounded text-xs">
                       {error}
@@ -220,12 +261,34 @@ export default function Contact() {
                     />
                   </div>
 
+                  <EmailVerification
+                    email={form.email}
+                    disabled={loading}
+                    verification={{
+                      step: verificationStep,
+                      verificationCode,
+                      requestCode,
+                      confirmCode,
+                      reset: resetVerification,
+                      message: verificationMessage,
+                      setVerificationCode,
+                      isConfirming
+                    }}
+                  />
+
                   <div className="pt-2">
-                    <Button type="submit" id="btn-contact-submit" loading={loading} className="w-full justify-center">
+                    <Button
+                      type="button"
+                      id="btn-contact-submit"
+                      loading={loading}
+                      className="w-full justify-center"
+                      onClick={handleSubmit}
+                      disabled={verificationStep !== 'idle' && verificationStep !== 'verified'}
+                    >
                       {loading ? 'Submitting...' : 'Submit Query'}
                     </Button>
                   </div>
-                </form>
+                </div>
               )}
             </div>
 

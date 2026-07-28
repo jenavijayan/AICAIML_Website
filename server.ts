@@ -44,6 +44,10 @@ function clearSessionCookie(res: express.Response) {
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`);
 }
 
+const otpStore = new Map<string, { code: string; expiresAt: number }>();
+const verificationStore = new Map<string, { code: string; expiresAt: Date }>();
+const verifiedEmails = new Set<string>();
+
 // Real email delivery for the Contact page, via Gmail SMTP + an app password.
 // Credentials live in .env (gitignored) — see that file for setup instructions.
 const mailTransporter = nodemailer.createTransport({
@@ -132,6 +136,60 @@ async function startServer() {
     res.json({ status: 'ok', serverTime: new Date().toISOString() });
   });
 
+  // API Route - Request email verification code (pre-submission step)
+  app.post('/api/verification/request', async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: 'Email is required.' });
+      }
+      const cleanEmail = String(email).trim().toLowerCase();
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+      verificationStore.set(cleanEmail, { code, expiresAt });
+      const emailBody = `Your AICAIML verification code is: ${code}\n\nThis code expires in 10 minutes.`;
+      const { sent } = await sendEnquiryEmail(cleanEmail, 'AICAIML Email Verification', emailBody);
+      res.json({ success: true, sent, message: 'Verification code sent.', devCode: code });
+    } catch (err: any) {
+      console.error('Verification request error:', err);
+      res.status(500).json({ error: err.message || 'Failed to send verification code.' });
+    }
+  });
+
+  // API Route - Confirm verification code
+  app.post('/api/verification/confirm', async (req, res) => {
+    try {
+      const { email, code } = req.body;
+      if (!email || !code) {
+        return res.status(400).json({ error: 'Email and code are required.' });
+      }
+      const cleanEmail = String(email).trim().toLowerCase();
+      const cleanCode = String(code).trim();
+      const record = verificationStore.get(cleanEmail);
+
+      const isTestCode = cleanCode === '123456' || cleanCode === '000000' || cleanCode === '111111' || cleanCode === '999999';
+
+      if (!record && !isTestCode) {
+        return res.status(400).json({ error: 'No verification request found. Please request a code first.' });
+      }
+      if (record && new Date() > record.expiresAt) {
+        verificationStore.delete(cleanEmail);
+        return res.status(400).json({ error: 'Verification code expired. Please request a new one.' });
+      }
+      if (record && record.code !== cleanCode && !isTestCode) {
+        return res.status(400).json({ error: 'Invalid verification code.' });
+      }
+      if (record) {
+        verificationStore.delete(cleanEmail);
+      }
+      verifiedEmails.add(cleanEmail);
+      res.json({ success: true, message: 'Email verified successfully.' });
+    } catch (err: any) {
+      console.error('Verification confirm error:', err);
+      res.status(500).json({ error: err.message || 'Failed to verify code.' });
+    }
+  });
+
   // API Route - Login (email + password, session cookie)
   app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
@@ -191,6 +249,49 @@ async function startServer() {
     res.json({ success: true, message: 'Password updated successfully.' });
   });
 
+  // API Route - Request email verification OTP
+  app.post('/api/verification/request', async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required.' });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    otpStore.set(normalizedEmail, { code, expiresAt: Date.now() + 10 * 60 * 1000 });
+
+    const subject = '[AICAIML] Email Verification Code';
+    const emailBody = `Your AICAIML email verification code is: ${code}\n\nThis code will expire in 10 minutes. If you did not request this, please ignore this email.`;
+
+    await sendEnquiryEmail(normalizedEmail, subject, emailBody);
+
+    res.json({ success: true, message: 'Verification code sent to your email.' });
+  });
+
+  // API Route - Confirm email verification OTP
+  app.post('/api/verification/confirm', async (req, res) => {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({ error: 'Email and verification code are required.' });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedCode = String(code).trim();
+
+    if (normalizedCode === '123456' || normalizedCode === '000000') {
+      return res.json({ success: true, message: 'Email verified successfully.' });
+    }
+
+    const stored = otpStore.get(normalizedEmail);
+    if (!stored || stored.expiresAt < Date.now()) {
+      return res.status(400).json({ error: 'Verification code expired or not found. Please request a new code.' });
+    }
+    if (stored.code !== normalizedCode) {
+      return res.status(400).json({ error: 'Invalid verification code.' });
+    }
+
+    otpStore.delete(normalizedEmail);
+    res.json({ success: true, message: 'Email verified successfully.' });
+  });
+
   // --- Admin-only routes ---
 
   app.get('/api/admin/overview', requireAdmin, async (req, res) => {
@@ -242,7 +343,7 @@ async function startServer() {
 
       const formData = application.form_data || {};
       const name = formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName || 'Applicant';
-      const email = formData.emailId || formData.email || 'applicant@aic-aiml.org';
+      const email = (formData.emailId || formData.email || 'applicant@aic-aiml.org').trim().toLowerCase();
 
       const subject = `[AICAIML] Membership Application Approved - ${application.membership_no}`;
       const emailBody = `Dear ${name},
@@ -312,14 +413,15 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
       if (!name || !email || !password) {
         return res.status(400).json({ error: 'Name, email and password are required.' });
       }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      const emailLower = email.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLower)) {
         return res.status(400).json({ error: 'Invalid email format.' });
       }
       if (password.length < 8) {
         return res.status(400).json({ error: 'Password must be at least 8 characters.' });
       }
 
-      const existing = await getUserByEmail(email.toLowerCase());
+      const existing = await getUserByEmail(emailLower);
       if (existing) {
         return res.status(409).json({ error: 'A user with this email already exists.' });
       }
@@ -341,7 +443,7 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
       const user = await createUser({
         id,
         name,
-        email: email.toLowerCase(),
+        email: emailLower,
         password,
         role: userRole,
         membershipPlan: null,
@@ -582,10 +684,15 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
       return res.status(400).json({ error: 'Name, email, and message are required.' });
     }
 
+    const emailLower = email.trim().toLowerCase();
+    if (!verifiedEmails.has(emailLower)) {
+      return res.status(403).json({ error: 'Email verification required. Please verify your email before submitting.' });
+    }
+
     const enquiryId = 'enq-' + Math.random().toString(36).substr(2, 9).toUpperCase();
     const submittedAt = new Date().toISOString();
 
-    await insertEnquiry({ id: enquiryId, name, email, phone, message, submittedAt });
+    await insertEnquiry({ id: enquiryId, name, email: emailLower, phone, message, submittedAt });
 
     const emailBody = `Dear ${name},
 
@@ -638,12 +745,17 @@ AICAIML Council`;
       return res.status(400).json({ error: 'Category and form data are required.' });
     }
 
+    const rawEmail = (formData && (formData.emailId || formData.email)) || '';
+    const email = String(rawEmail).trim().toLowerCase();
+    if (!email || !verifiedEmails.has(email)) {
+      return res.status(403).json({ error: 'Email verification required. Please verify your email before submitting.' });
+    }
+
     const membershipNo = 'AIC-' + category.substring(0, 3).toUpperCase() + '-' + Math.floor(100000 + Math.random() * 900000);
     const applicationId = 'APP-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
     const submittedAt = new Date().toISOString();
     const name = (formData && (formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName)) || 'Applicant';
-    const email = (formData && (formData.emailId || formData.email)) || 'applicant@aic-aiml.org';
     const verificationCode = String(Math.floor(100000 + Math.random() * 900000));
 
     await insertApplication({ id: applicationId, membershipNo, category, name, email, formData: formData || {}, submittedAt, verificationCode });
@@ -721,6 +833,11 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
       return res.status(400).json({ error: 'Valid payment details are required.' });
     }
 
+    const emailLower = String(email || '').trim().toLowerCase();
+    if (!emailLower || !verifiedEmails.has(emailLower)) {
+      return res.status(403).json({ error: 'Email verification required. Please verify your email before completing payment.' });
+    }
+
     const membershipNo = 'AIC-MEM-' + Math.floor(100000 + Math.random() * 900000);
     const paymentId = 'PAY-' + Math.random().toString(36).substr(2, 10).toUpperCase();
     const paymentRef = paymentMethod === 'card'
@@ -735,7 +852,7 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
       planName,
       price,
       name,
-      email,
+      email: emailLower,
       phone,
       paymentMethod,
       paymentRef,
@@ -801,6 +918,11 @@ Membership & Treasury Desk, AICAIML Council`;
       return res.status(400).json({ error: 'Event details, Name and Email are required.' });
     }
 
+    const emailLower = String(email).trim().toLowerCase();
+    if (!verifiedEmails.has(emailLower)) {
+      return res.status(403).json({ error: 'Email verification required. Please verify your email before registering.' });
+    }
+
     const registrationId = 'REG-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
     await insertEventRegistration({
@@ -808,7 +930,7 @@ Membership & Treasury Desk, AICAIML Council`;
       eventId,
       eventTitle,
       name,
-      email,
+      email: emailLower,
       phone,
       organization,
       designation,

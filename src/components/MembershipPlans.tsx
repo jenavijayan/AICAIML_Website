@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { membershipPlans, MembershipPlan } from '../cmsData';
 import { Button, Dialog, DialogHeader, TextField } from './ui';
+import { useFormVerification } from '../hooks/useFormVerification';
+import EmailVerification from './EmailVerification';
 
 export default function MembershipPlans() {
   const [activePlan, setActivePlan] = useState<MembershipPlan | null>(null);
@@ -22,13 +24,29 @@ export default function MembershipPlans() {
     setForm({ name: '', email: '', phone: '', cardNumber: '', expiry: '', cvv: '', upiId: '' });
   };
 
-  const handleCheckout = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const {
+    step: verificationStep,
+    verificationCode,
+    requestCode,
+    confirmCode,
+    reset: resetVerification,
+    message: verificationMessage,
+    setVerificationCode,
+    isConfirming
+  } = useFormVerification({
+    email: form.email,
+    onVerified: () => {
+      submitCheckout();
+    }
+  });
+
+  const submitCheckout = async () => {
     if (!activePlan) return;
     setError(null);
     setLoading(true);
-
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
       const response = await fetch('/api/membership/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -43,20 +61,39 @@ export default function MembershipPlans() {
           cardNumber: form.cardNumber,
           upiId: form.upiId,
           honeypot
-        })
+        }),
+        signal: controller.signal,
+        credentials: 'include'
       });
-
+      clearTimeout(timeoutId);
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || 'Payment could not be processed.');
       }
-
       setSuccessData(data);
+      resetVerification();
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred while processing payment.');
+      if (err.name === 'AbortError') {
+        setError('Request timed out. Please check your connection and try again.');
+      } else {
+        setError(err.message || 'An unexpected error occurred while processing payment.');
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCheckout = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activePlan) return;
+    if (verificationStep !== 'verified') {
+      const sent = await requestCode();
+      if (!sent) {
+        setError('Failed to send verification code. Please try again.');
+      }
+      return;
+    }
+    await submitCheckout();
   };
 
   return (
@@ -148,6 +185,7 @@ export default function MembershipPlans() {
                         <span className="font-bold text-navy">{successData.paymentRef}</span>
                       </div>
                     </div>
+
                     <div className="border border-slate-200 rounded-xl overflow-hidden">
                       <div className="bg-slate-50 px-3 py-2 border-b border-slate-200 flex items-center gap-2 text-[11px] text-slate-600 font-semibold">
                         <Mail className="w-3.5 h-3.5 text-corp-blue" />
@@ -272,24 +310,39 @@ export default function MembershipPlans() {
                       )}
                     </div>
 
-                    <p className="text-[10px] text-slate-400 pt-1">
-                      This is a demo checkout — no real payment is processed. Submitting confirms a simulated transaction for this membership plan.
-                    </p>
+                     <p className="text-[10px] text-slate-400 pt-1">
+                       This is a demo checkout — no real payment is processed. Submitting confirms a simulated transaction for this membership plan.
+                     </p>
 
-                    <div className="pt-2 flex gap-2.5">
-                      <Button type="button" variant="outline" onClick={closeModal} className="flex-1 justify-center">
-                        Cancel
-                      </Button>
-                      <Button type="submit" variant="accent" loading={loading} className="flex-1 justify-center">
-                        {loading ? 'Processing...' : `Pay ₹${activePlan.price.toLocaleString('en-IN')}`}
-                      </Button>
-                    </div>
-                  </form>
-                </>
-              )}
-            </>
-        )}
-      </Dialog>
-    </>
-  );
-}
+                       <EmailVerification
+                         email={form.email}
+                         disabled={loading}
+                         verification={{
+                           step: verificationStep,
+                           verificationCode,
+                           requestCode,
+                           confirmCode,
+                           reset: resetVerification,
+                           message: verificationMessage,
+                           setVerificationCode,
+                           isConfirming
+                         }}
+                       />
+
+                     <div className="pt-2 flex gap-2.5">
+                       <Button type="button" variant="outline" onClick={closeModal} className="flex-1 justify-center">
+                         Cancel
+                       </Button>
+                       <Button type="submit" variant="accent" loading={loading} className="flex-1 justify-center" disabled={verificationStep !== 'verified'}>
+                         {loading ? 'Processing...' : verificationStep === 'verified' ? `Pay ₹${activePlan.price.toLocaleString('en-IN')}` : 'Verify Email First'}
+                       </Button>
+                     </div>
+                   </form>
+                 </>
+               )}
+             </>
+         )}
+       </Dialog>
+     </>
+   );
+ }

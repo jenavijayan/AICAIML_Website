@@ -6,14 +6,16 @@ import crypto from 'crypto';
 // callers in server.ts must await them.
 
 // --- Enquiries ---
-export async function insertEnquiry(enquiry: { id: string; name: string; email: string; phone?: string; message: string; submittedAt: string }) {
+export async function insertEnquiry(enquiry: { id: string; name: string; email: string; phone?: string; message: string; submittedAt: string; verificationCode?: string; emailVerified?: string }) {
   const { error } = await supabase.from('enquiries').insert({
     id: enquiry.id,
     name: enquiry.name,
     email: enquiry.email,
     phone: enquiry.phone || null,
     message: enquiry.message,
-    submitted_at: enquiry.submittedAt
+    submitted_at: enquiry.submittedAt,
+    verification_code: enquiry.verificationCode || null,
+    email_verified: enquiry.emailVerified || 'false'
   });
   if (error) throw error;
 }
@@ -22,8 +24,18 @@ export function getAllEnquiries() {
   return supabase.from('enquiries').select('*').order('submitted_at', { ascending: false });
 }
 
+export async function verifyEnquiryEmail(id: string, code: string) {
+  const { data, error } = await supabase.from('enquiries').select('*').eq('id', id).single();
+  if (error || !data) return { success: false, error: 'Enquiry not found.' };
+  if (data.verification_code !== code) return { success: false, error: 'Invalid verification code.' };
+  if (data.email_verified === 'true') return { success: false, error: 'Email is already verified.' };
+  const { error: updateError } = await supabase.from('enquiries').update({ email_verified: 'true' }).eq('id', id);
+  if (updateError) return { success: false, error: updateError.message };
+  return { success: true };
+}
+
 // --- Applications ---
-export async function insertApplication(app: { id: string; membershipNo: string; category: string; name: string; email: string; formData: unknown; submittedAt: string; verificationCode?: string }) {
+export async function insertApplication(app: { id: string; membershipNo: string; category: string; name: string; email: string; formData: unknown; submittedAt: string; verificationCode?: string; emailVerified?: string }) {
   const { error } = await supabase.from('applications').insert({
     id: app.id,
     membership_no: app.membershipNo,
@@ -32,7 +44,8 @@ export async function insertApplication(app: { id: string; membershipNo: string;
     email: app.email,
     form_data: app.formData,
     submitted_at: app.submittedAt,
-    verification_code: app.verificationCode || null
+    verification_code: app.verificationCode || null,
+    email_verified: app.emailVerified || 'false'
   });
   if (error) throw error;
 }
@@ -75,6 +88,8 @@ export async function insertEventRegistration(reg: {
   organization?: string;
   designation?: string;
   registeredAt: string;
+  verificationCode?: string;
+  emailVerified?: string;
 }) {
   const { error } = await supabase.from('event_registrations').insert({
     id: reg.id,
@@ -85,13 +100,25 @@ export async function insertEventRegistration(reg: {
     phone: reg.phone || null,
     organization: reg.organization || null,
     designation: reg.designation || null,
-    registered_at: reg.registeredAt
+    registered_at: reg.registeredAt,
+    verification_code: reg.verificationCode || null,
+    email_verified: reg.emailVerified || 'false'
   });
   if (error) throw error;
 }
 
 export function getAllEventRegistrations() {
   return supabase.from('event_registrations').select('*').order('registered_at', { ascending: false });
+}
+
+export async function verifyEventRegistrationEmail(id: string, code: string) {
+  const { data, error } = await supabase.from('event_registrations').select('*').eq('id', id).single();
+  if (error || !data) return { success: false, error: 'Registration not found.' };
+  if (data.verification_code !== code) return { success: false, error: 'Invalid verification code.' };
+  if (data.email_verified === 'true') return { success: false, error: 'Email is already verified.' };
+  const { error: updateError } = await supabase.from('event_registrations').update({ email_verified: 'true' }).eq('id', id);
+  if (updateError) return { success: false, error: updateError.message };
+  return { success: true };
 }
 
 // --- News ---
@@ -126,6 +153,8 @@ export async function insertMembershipPayment(payment: {
   paymentRef: string;
   status: string;
   paidAt: string;
+  verificationCode?: string;
+  emailVerified?: string;
 }) {
   const { error } = await supabase.from('memberships').insert({
     id: payment.id,
@@ -139,7 +168,9 @@ export async function insertMembershipPayment(payment: {
     payment_method: payment.paymentMethod,
     payment_ref: payment.paymentRef,
     status: payment.status,
-    paid_at: payment.paidAt
+    paid_at: payment.paidAt,
+    verification_code: payment.verificationCode || null,
+    email_verified: payment.emailVerified || 'false'
   });
   if (error) throw error;
 }
@@ -150,6 +181,16 @@ export function getMembershipByNo(membershipNo: string) {
 
 export function getAllMemberships() {
   return supabase.from('memberships').select('*').order('paid_at', { ascending: false });
+}
+
+export async function verifyMembershipPaymentEmail(id: string, code: string) {
+  const { data, error } = await supabase.from('memberships').select('*').eq('id', id).single();
+  if (error || !data) return { success: false, error: 'Membership payment not found.' };
+  if (data.verification_code !== code) return { success: false, error: 'Invalid verification code.' };
+  if (data.email_verified === 'true') return { success: false, error: 'Email is already verified.' };
+  const { error: updateError } = await supabase.from('memberships').update({ email_verified: 'true' }).eq('id', id);
+  if (updateError) return { success: false, error: updateError.message };
+  return { success: true };
 }
 
 // --- Certificates ---
@@ -361,7 +402,7 @@ export async function createUser(user: {
   const { data, error } = await supabase.from('users').insert({
     id: user.id,
     name: user.name,
-    email: user.email.toLowerCase(),
+    email: user.email.toLowerCase().trim(),
     password_hash: hash,
     password_salt: salt,
     role: user.role,
@@ -376,27 +417,27 @@ export async function createUser(user: {
 }
 
 export async function getUserByEmail(email: string): Promise<PublicUser | undefined> {
-  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase()).single();
+  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase().trim()).single();
   if (error || !data) return undefined;
   return toPublicUser(data);
 }
 
 export async function verifyCredentials(email: string, password: string): Promise<PublicUser | null> {
-  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase()).single();
+  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase().trim()).single();
   if (error || !data) return null;
   if (!verifyPassword(password, data.password_hash, data.password_salt)) return null;
   return toPublicUser(data);
 }
 
 export async function updateUserPassword(email: string, currentPassword: string, newPassword: string): Promise<boolean> {
-  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase()).single();
+  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase().trim()).single();
   if (error || !data) return false;
   if (!verifyPassword(currentPassword, data.password_hash, data.password_salt)) return false;
   const { hash, salt } = hashPassword(newPassword);
   const { error: updateError } = await supabase.from('users').update({
     password_hash: hash,
     password_salt: salt
-  }).eq('email', email.toLowerCase());
+  }).eq('email', email.toLowerCase().trim());
   return !updateError;
 }
 

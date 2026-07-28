@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck, Users, FileText, Calendar, CreditCard, BookOpen, Newspaper,
-  Loader2, Plus, Trash2, Upload, Mail, Phone, ChevronDown
+  Loader2, Plus, Trash2, Upload, Mail, Phone, ChevronDown, FolderOpen
 } from 'lucide-react';
 import { Button, IconButton, TabList, TabPanel } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
@@ -58,18 +58,33 @@ export default function AdminDashboard() {
   const [userSubmitting, setUserSubmitting] = useState(false);
   const [userMessage, setUserMessage] = useState<string | null>(null);
 
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [isPolling, setIsPolling] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const fetchJson = async (url: string) => {
-    const res = await fetch(url, { credentials: 'include' });
-    if (!res.ok) throw new Error(`Request failed (${res.status})`);
-    return res.json();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+      const res = await fetch(url, { credentials: 'include', signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      return await res.json();
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
   };
 
   const loadOverview = async () => {
     setLoading(true);
+    setErrorMessage(null);
     try {
       setOverview(await fetchJson('/api/admin/overview'));
-    } catch (err) {
+      setLastRefreshed(new Date());
+    } catch (err: any) {
       console.error(err);
+      setErrorMessage(err.message || 'Failed to load overview.');
     } finally {
       setLoading(false);
     }
@@ -90,11 +105,14 @@ export default function AdminDashboard() {
     const endpoint = endpoints[tab];
     if (!endpoint) return;
     setLoading(true);
+    setErrorMessage(null);
     try {
       setRows(await fetchJson(endpoint));
-    } catch (err) {
+      setLastRefreshed(new Date());
+    } catch (err: any) {
       console.error(err);
       setRows([]);
+      setErrorMessage(err.message || 'Failed to load records.');
     } finally {
       setLoading(false);
     }
@@ -108,6 +126,33 @@ export default function AdminDashboard() {
     if (activeTab !== 'overview' && activeTab !== 'announcements') {
       loadTab(activeTab);
     }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!isPolling) return;
+    const interval = setInterval(() => {
+      if (activeTab === 'overview' || activeTab === 'announcements') {
+        loadOverview();
+      } else {
+        loadTab(activeTab);
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isPolling, activeTab]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      setIsPolling(!document.hidden);
+      if (!document.hidden) {
+        if (activeTab === 'overview' || activeTab === 'announcements') {
+          loadOverview();
+        } else {
+          loadTab(activeTab);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [activeTab]);
 
   const handlePublishNews = async (e: React.FormEvent) => {
@@ -185,9 +230,13 @@ export default function AdminDashboard() {
 
   const handleDeleteCourse = async (id: string) => {
     if (!confirm('Delete this course? This cannot be undone.')) return;
-    await fetch(`/api/admin/courses/${id}`, { method: 'DELETE', credentials: 'include' });
-    loadTab('courses');
-    loadOverview();
+    try {
+      await fetch(`/api/admin/courses/${id}`, { method: 'DELETE', credentials: 'include' });
+      loadTab('courses');
+      loadOverview();
+    } catch (err: any) {
+      setCourseMessage(err.message || 'Failed to delete course.');
+    }
   };
 
   const handleCreateProject = async (e: React.FormEvent) => {
@@ -217,9 +266,13 @@ export default function AdminDashboard() {
 
   const handleDeleteProject = async (id: string) => {
     if (!confirm('Delete this project?')) return;
-    await fetch(`/api/admin/projects/${id}`, { method: 'DELETE', credentials: 'include' });
-    loadTab('projects');
-    loadOverview();
+    try {
+      await fetch(`/api/admin/projects/${id}`, { method: 'DELETE', credentials: 'include' });
+      loadTab('projects');
+      loadOverview();
+    } catch (err: any) {
+      setProjectMessage(err.message || 'Failed to delete project.');
+    }
   };
 
   const handleCreatePartner = async (e: React.FormEvent) => {
@@ -249,9 +302,13 @@ export default function AdminDashboard() {
 
   const handleDeletePartner = async (id: string) => {
     if (!confirm('Delete this partner?')) return;
-    await fetch(`/api/admin/partners/${id}`, { method: 'DELETE', credentials: 'include' });
-    loadTab('partners');
-    loadOverview();
+    try {
+      await fetch(`/api/admin/partners/${id}`, { method: 'DELETE', credentials: 'include' });
+      loadTab('partners');
+      loadOverview();
+    } catch (err: any) {
+      setPartnerMessage(err.message || 'Failed to delete partner.');
+    }
   };
 
   const handleCreateTestimonial = async (e: React.FormEvent) => {
@@ -281,9 +338,13 @@ export default function AdminDashboard() {
 
   const handleDeleteTestimonial = async (id: string) => {
     if (!confirm('Delete this testimonial?')) return;
-    await fetch(`/api/admin/testimonials/${id}`, { method: 'DELETE', credentials: 'include' });
-    loadTab('testimonials');
-    loadOverview();
+    try {
+      await fetch(`/api/admin/testimonials/${id}`, { method: 'DELETE', credentials: 'include' });
+      loadTab('testimonials');
+      loadOverview();
+    } catch (err: any) {
+      setTestimonialMessage(err.message || 'Failed to delete testimonial.');
+    }
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -363,11 +424,19 @@ export default function AdminDashboard() {
     { id: 'memberships', label: 'Paid Memberships', icon: CreditCard },
     { id: 'users', label: 'Registered Users', icon: Users },
     { id: 'courses', label: 'Courses', icon: BookOpen },
-    { id: 'projects', label: 'Projects', icon: BookOpen },
+    { id: 'projects', label: 'Projects', icon: FolderOpen },
     { id: 'partners', label: 'Partners', icon: Users },
     { id: 'testimonials', label: 'Testimonials', icon: ShieldCheck },
     { id: 'announcements', label: 'Announcements', icon: Newspaper }
   ];
+
+  const handleRefresh = () => {
+    if (activeTab === 'overview' || activeTab === 'announcements') {
+      loadOverview();
+    } else {
+      loadTab(activeTab);
+    }
+  };
 
   return (
     <div id="admin-dashboard-page" className="animate-slideup min-h-screen bg-slate-50">
@@ -379,8 +448,33 @@ export default function AdminDashboard() {
           </div>
           <h1 className="text-3xl font-bold font-heading mt-1 text-gradient-animate-light">Council Administration</h1>
           <p className="text-slate-300 text-sm mt-1">Manage courses, announcements, and view everyone who has registered or applied.</p>
+          {lastRefreshed && (
+            <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-400">
+              <span className={`inline-block w-2 h-2 rounded-full ${isPolling ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`}></span>
+              <span>Last updated: {lastRefreshed.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+              <span className="text-slate-500">• Auto-refresh {isPolling ? 'ON (30s)' : 'PAUSED'}</span>
+            </div>
+          )}
+          <div className="mt-3">
+            <button
+              onClick={handleRefresh}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-50"
+            >
+              {loading ? 'Refreshing…' : 'Refresh Now'}
+            </button>
+          </div>
         </div>
       </section>
+
+      {errorMessage && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+          <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded text-xs flex items-start gap-2">
+            <span>{errorMessage}</span>
+            <button onClick={() => setErrorMessage(null)} className="ml-auto text-rose-600 hover:text-rose-800 font-bold">×</button>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Tabs */}
@@ -488,7 +582,7 @@ export default function AdminDashboard() {
               </form>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
               {loading ? (
                 <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
               ) : (
@@ -652,7 +746,7 @@ export default function AdminDashboard() {
               </form>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
               {loading ? (
                 <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
               ) : (
@@ -719,7 +813,7 @@ export default function AdminDashboard() {
               </form>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
               {loading ? (
                 <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
               ) : (
@@ -779,7 +873,7 @@ export default function AdminDashboard() {
               </form>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
               {loading ? (
                 <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
               ) : (
@@ -839,7 +933,7 @@ export default function AdminDashboard() {
               </form>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
               {loading ? (
                 <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
               ) : (

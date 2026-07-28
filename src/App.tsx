@@ -11,6 +11,7 @@ import Footer from './components/Footer';
 import CookieConsent from './components/CookieConsent';
 import MembershipPlans from './components/MembershipPlans';
 import { Button, IconButton, Dialog, DialogHeader, TextField } from './components/ui';
+import EmailVerification from './components/EmailVerification';
 
 import Home from './pages/Home';
 import KnowAICAIML from './pages/KnowAICAIML';
@@ -25,6 +26,7 @@ import Legal from './pages/Legal';
 
 import { UpcomingEvent } from './cmsData';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { useFormVerification } from './hooks/useFormVerification';
 
 // Code-split — these are the three heaviest, least-often-visited routes
 // (a rich-content course reader, a 1000+-line multi-form component, and an
@@ -60,13 +62,6 @@ function AppShell() {
   const [isDonationOpen, setIsDonationOpen] = useState(false);
   const [activeRegEvent, setActiveRegEvent] = useState<UpcomingEvent | null>(null);
 
-  // Form registration states (inside registration modal)
-  const [regForm, setRegForm] = useState({ name: '', email: '', phone: '', organization: '', designation: '' });
-  const [regHoneypot, setRegHoneypot] = useState('');
-  const [regLoading, setRegLoading] = useState(false);
-  const [regSuccess, setRegSuccess] = useState<any | null>(null);
-  const [regError, setRegError] = useState<string | null>(null);
-
   // Donation interactive state
   const [donationAmount, setDonationAmount] = useState('5000');
   const [customDonation, setCustomDonation] = useState('');
@@ -74,29 +69,36 @@ function AppShell() {
   const [donationSuccess, setDonationSuccess] = useState<any | null>(null);
   const [donationForm, setDonationForm] = useState({ name: '', email: '', panNo: '' });
 
-  // Read hash fragment for back-links from components
-  useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '');
-      if (hash && ['home', 'know-aicaiml', 'courses', 'learners', 'events-projects', 'membership', 'login', 'verification', 'contact', 'privacy', 'terms'].includes(hash)) {
-        setCurrentPage(hash);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    };
-    window.addEventListener('hashchange', handleHashChange);
-    handleHashChange();
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  // Form registration states (inside registration modal)
+  const [regForm, setRegForm] = useState({ name: '', email: '', phone: '', organization: '', designation: '' });
+  const [regHoneypot, setRegHoneypot] = useState('');
+  const [regLoading, setRegLoading] = useState(false);
+  const [regSuccess, setRegSuccess] = useState<any | null>(null);
+  const [regError, setRegError] = useState<string | null>(null);
 
-  // Event Register submit
-  const handleEventRegisterSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const {
+    step: regVerificationStep,
+    verificationCode: regVerificationCode,
+    requestCode: requestRegCode,
+    confirmCode: confirmRegCode,
+    reset: resetRegVerification,
+    message: regVerifyMessage,
+    setVerificationCode: setRegVerificationCode,
+    isConfirming: regIsConfirming
+  } = useFormVerification({
+    email: regForm.email,
+    onVerified: () => {
+      submitEventRegistration();
+    }
+  });
+
+  const submitEventRegistration = async () => {
     if (!activeRegEvent) return;
     setRegLoading(true);
     setRegError(null);
-    setRegSuccess(null);
-
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
       const response = await fetch('/api/events/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -105,20 +107,41 @@ function AppShell() {
           eventTitle: activeRegEvent.title,
           ...regForm,
           honeypot: regHoneypot
-        })
+        }),
+        signal: controller.signal,
+        credentials: 'include'
       });
-
+      clearTimeout(timeoutId);
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || 'Failed to submit event registration.');
       }
-
       setRegSuccess(data);
       setRegForm({ name: '', email: '', phone: '', organization: '', designation: '' });
+      resetRegVerification();
     } catch (err: any) {
-      setRegError(err.message || 'An unexpected server error occurred.');
+      if (err.name === 'AbortError') {
+        setRegError('Request timed out. Please check your connection and try again.');
+      } else {
+        setRegError(err.message || 'An unexpected server error occurred.');
+      }
     } finally {
       setRegLoading(false);
+    }
+  };
+
+  // Event Register submit
+  const handleEventRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeRegEvent) return;
+    setRegError(null);
+    if (regVerificationStep === 'verified') {
+      await submitEventRegistration();
+      return;
+    }
+    const sent = await requestRegCode();
+    if (!sent) {
+      setRegError('Failed to send verification code. Please try again.');
     }
   };
 
@@ -171,6 +194,20 @@ function AppShell() {
     navigator.clipboard.writeText(text);
     alert(`Copied to clipboard: ${text}`);
   };
+
+  // Read hash fragment for back-links from components
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (hash && ['home', 'know-aicaiml', 'courses', 'learners', 'events-projects', 'membership', 'login', 'verification', 'contact', 'privacy', 'terms', 'benefits-view'].includes(hash)) {
+        setCurrentPage(hash);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    handleHashChange();
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   return (
     <div id="aicaiml-root" className="min-h-screen bg-white flex flex-col font-sans">
@@ -292,6 +329,7 @@ function AppShell() {
                           { id: 'university' as const, title: 'University', icon: Award, color: 'border-rose-200 bg-rose-50/40 text-rose-700', desc: 'Central, state and deemed universities launching advanced CoEs.' }
                         ].map((cat) => {
                           const IconComp = cat.icon;
+
                           return (
                             <div 
                               key={cat.id} 
@@ -410,7 +448,7 @@ function AppShell() {
                     {regSuccess.emailLog}
                   </div>
 
-                  <Button className="w-full justify-center" onClick={() => setActiveRegEvent(null)}>
+                  <Button className="w-full justify-center" onClick={() => { setActiveRegEvent(null); setRegSuccess(null); resetRegVerification(); }}>
                     Close Modal
                   </Button>
                 </div>
@@ -482,6 +520,21 @@ function AppShell() {
                     </div>
                   </div>
 
+                  <EmailVerification
+                    email={regForm.email}
+                    disabled={regLoading}
+                    verification={{
+                      step: regVerificationStep,
+                      verificationCode: regVerificationCode,
+                      requestCode: requestRegCode,
+                      confirmCode: confirmRegCode,
+                      reset: resetRegVerification,
+                      message: regVerifyMessage,
+                      setVerificationCode: setRegVerificationCode,
+                      isConfirming: regIsConfirming
+                    }}
+                  />
+
                   <p className="text-[10px] text-slate-400">
                     * Registering interest alerts the events coordination desk. Seat allocations and virtual links will be emailed 24 hours prior.
                   </p>
@@ -490,8 +543,8 @@ function AppShell() {
                     <Button type="button" variant="outline" size="sm" onClick={() => setActiveRegEvent(null)}>
                       Cancel
                     </Button>
-                    <Button type="submit" variant="accent" size="sm" loading={regLoading} className="min-w-[120px]">
-                      Register Ticket
+                    <Button type="submit" variant="accent" size="sm" loading={regLoading} className="min-w-[120px]" disabled={regVerificationStep !== 'verified'}>
+                      {regLoading ? 'Registering...' : regVerificationStep === 'verified' ? 'Register Ticket' : 'Verify Email First'}
                     </Button>
                   </div>
                 </form>

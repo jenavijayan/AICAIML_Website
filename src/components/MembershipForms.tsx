@@ -5,6 +5,8 @@ import {
   CheckCircle, ArrowLeft, Loader2, AlertCircle, Sparkles, Mail, Eye
 } from 'lucide-react';
 import { Button } from './ui';
+import { useFormVerification } from '../hooks/useFormVerification';
+import EmailVerification from './EmailVerification';
 
 interface FormProps {
   category: 'student' | 'msme' | 'corporate' | 'school' | 'university';
@@ -15,7 +17,8 @@ export default function MembershipForms({ category, onBack }: FormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successData, setSuccessData] = useState<any | null>(null);
-  
+  const [verified, setVerified] = useState(false);
+
   // Anti-spam Honeypot field
   const [honeypot, setHoneypot] = useState('');
 
@@ -145,11 +148,49 @@ export default function MembershipForms({ category, onBack }: FormProps) {
     }
   };
 
+  const getCurrentEmail = () => {
+    switch (category) {
+      case 'student': return studentForm.emailId;
+      case 'msme': return msmeForm.emailId;
+      case 'corporate': return corporateForm.emailId;
+      case 'school': return schoolForm.emailId;
+      case 'university': return universityForm.emailId;
+      default: return '';
+    }
+  };
+
+  const {
+    step: verificationStep,
+    verificationCode,
+    requestCode,
+    confirmCode,
+    reset: resetVerification,
+    message: verificationMessage,
+    setVerificationCode,
+    isConfirming
+  } = useFormVerification({
+    email: getCurrentEmail(),
+    onVerified: () => {
+      setVerified(true);
+    }
+  });
+
+  const resetAll = () => {
+    setSuccessData(null);
+    setVerified(false);
+    resetVerification();
+  };
+
   // Submit Handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
+
+    if (!verified) {
+      setLoading(false);
+      return;
+    }
 
     // Dynamic extraction of appropriate form payload
     let payload: any = {};
@@ -204,6 +245,18 @@ export default function MembershipForms({ category, onBack }: FormProps) {
     }
 
     try {
+      if (!verified) {
+        const sent = await requestCode();
+        if (!sent) {
+          throw new Error('Failed to send verification code. Please try again.');
+        }
+        setLoading(false);
+        return;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
       const response = await fetch('/api/membership/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -211,8 +264,12 @@ export default function MembershipForms({ category, onBack }: FormProps) {
           category,
           formData: payload,
           honeypot
-        })
+        }),
+        signal: controller.signal,
+        credentials: 'include'
       });
+
+      clearTimeout(timeoutId);
 
       const resData = await response.json();
       if (!response.ok) {
@@ -222,7 +279,11 @@ export default function MembershipForms({ category, onBack }: FormProps) {
       setSuccessData(resData);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'An unexpected networking issue occurred.');
+      if (err.name === 'AbortError') {
+        setError('Request timed out. Please check your connection and try again.');
+      } else {
+        setError(err.message || 'An unexpected networking issue occurred.');
+      }
     } finally {
       setLoading(false);
     }
@@ -262,7 +323,7 @@ export default function MembershipForms({ category, onBack }: FormProps) {
               <div>
                 <span className="block text-slate-500 text-xs uppercase font-semibold">Review Pipeline Status</span>
                 <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-inset ring-amber-600/20 mt-1">
-                  Pending Verification
+                  Pending Review
                 </span>
               </div>
             </div>
@@ -1238,22 +1299,39 @@ export default function MembershipForms({ category, onBack }: FormProps) {
         {/* ------------------------------------------------------------- */}
         {/* FORM SUBMIT ACTIONS */}
         {/* ------------------------------------------------------------- */}
-        <div className="pt-6 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <p className="text-xs text-slate-500 max-w-sm text-center sm:text-left">
-            * Fields marked with asterisks are mandatory. Digital credential review is secured by end-to-end encryption.
-          </p>
-          <div className="flex gap-3 w-full sm:w-auto">
-            <Button type="button" variant="outline" onClick={onBack} className="flex-1 sm:flex-none justify-center">
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              loading={loading}
-              id="btn-form-submit"
-              className="flex-1 sm:flex-none justify-center min-w-[140px]"
-            >
-              {loading ? 'Processing...' : 'Submit Application'}
-            </Button>
+        <div className="pt-6 border-t border-slate-200 flex flex-col gap-4">
+          <EmailVerification
+            email={getCurrentEmail()}
+            disabled={loading}
+            verification={{
+              step: verificationStep,
+              verificationCode,
+              requestCode,
+              confirmCode,
+              reset: resetVerification,
+              message: verificationMessage,
+              setVerificationCode,
+              isConfirming
+            }}
+          />
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+            <p className="text-xs text-slate-500 max-w-sm text-center sm:text-left">
+              * Fields marked with asterisks are mandatory. Digital credential review is secured by end-to-end encryption.
+            </p>
+            <div className="flex gap-3 w-full sm:w-auto">
+              <Button type="button" variant="outline" onClick={onBack} className="flex-1 sm:flex-none justify-center">
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                loading={loading}
+                id="btn-form-submit"
+                className="flex-1 sm:flex-none justify-center min-w-[140px]"
+                disabled={!verified && verificationStep !== 'verified'}
+              >
+                {loading ? 'Processing...' : (verified || verificationStep === 'verified') ? 'Submit Application' : 'Verify Email First'}
+              </Button>
+            </div>
           </div>
         </div>
 

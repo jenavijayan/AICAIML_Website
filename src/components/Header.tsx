@@ -51,6 +51,7 @@ export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
     { id: 'learners', label: 'Community' },
     { id: 'events-projects', label: 'Events' },
     { id: 'membership', label: 'Membership' },
+    { id: 'benefits-view', label: 'Benefits' },
     { id: 'contact', label: 'Contact' },
     ...(user?.role === 'admin' ? [{ id: 'admin', label: 'Admin' }] : []),
     ...(user ? [] : [{ id: 'login', label: 'Login' }])
@@ -190,7 +191,7 @@ export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-2 pt-4 px-3 border-t border-slate-200">
+              <div className="flex flex-col gap-2 pt-4 px-3 border-t border-slate-200">
                 {user ? (
                   <Button
                     id="mobile-btn-logout"
