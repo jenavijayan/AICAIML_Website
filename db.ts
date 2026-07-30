@@ -476,9 +476,18 @@ export async function deleteSession(token: string) {
   if (error) console.error('Failed to delete session:', error);
 }
 
-export async function seedDevUser() {
-  const existing = await getUserByEmail('developer@aicaiml.org');
-  if (existing) return existing;
+export async function seedDevUser(): Promise<PublicUser> {
+  const { data: byId } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', 'user-dev-001');
+
+  const existingById = Array.isArray(byId) && byId.length > 0 ? byId[0] : null;
+  if (existingById) return toPublicUser(existingById);
+
+  const byEmail = await getUserByEmail('developer@aicaiml.org');
+  if (byEmail) return byEmail;
+
   return createUser({
     id: 'user-dev-001',
     name: 'Developer',
