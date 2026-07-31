@@ -82,11 +82,7 @@ export default function Home({
 
   const heroImages = [
     resolveAssetUrl('/images/hero-poster.jpg'),
-    resolveAssetUrl('/images/project-nasci-initiative.jpg'),
-    resolveAssetUrl('/images/project-robotics-sandbox.jpg'),
-    resolveAssetUrl('/images/project-ai-ethics-healthcare.jpg'),
-    resolveAssetUrl('/images/project-smart-agriculture.jpg'),
-    resolveAssetUrl('/images/ashwini_vaishnaw_card.jpg')
+    resolveAssetUrl('/images/hero-poster.jpg')
   ];
   const [heroBgIndex, setHeroBgIndex] = useState(0);
 
