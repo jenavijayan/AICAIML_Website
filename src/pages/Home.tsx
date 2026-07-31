@@ -11,6 +11,7 @@ import {
 } from '../cmsData';
 import { Button, IconButton, Card, IconBadge } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
+import { resolveAssetUrl } from '../lib/assetPaths';
 
 interface HomeProps {
   setCurrentPage: (page: string) => void;
@@ -79,7 +80,14 @@ export default function Home({
   // Testimonial Carousel Index
   const [testimonialIndex, setTestimonialIndex] = useState(0);
 
-  const heroImages = ['/images/1.png', '/images/2.png', '/images/3.png', '/images/4.png', '/images/5.png', '/images/6.png'];
+  const heroImages = [
+    resolveAssetUrl('/images/hero-poster.jpg'),
+    resolveAssetUrl('/images/project-nasci-initiative.jpg'),
+    resolveAssetUrl('/images/project-robotics-sandbox.jpg'),
+    resolveAssetUrl('/images/project-ai-ethics-healthcare.jpg'),
+    resolveAssetUrl('/images/project-smart-agriculture.jpg'),
+    resolveAssetUrl('/images/ashwini_vaishnaw_card.jpg')
+  ];
   const [heroBgIndex, setHeroBgIndex] = useState(0);
 
   useEffect(() => {
@@ -366,22 +374,22 @@ export default function Home({
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               {
-                src: '/videos/showcase-v1.mp4',
+                src: resolveAssetUrl('/videos/showcase-v1.mp4'),
                 title: 'Human-AI Collaboration',
                 desc: 'Where human intent meets machine capability.'
               },
               {
-                src: '/videos/showcase-v2.mp4',
+                src: resolveAssetUrl('/videos/showcase-v2.mp4'),
                 title: 'Immersive Computing',
                 desc: 'Next-generation interfaces for how we learn and build.'
               },
               {
-                src: '/videos/showcase-v3.mp4',
+                src: resolveAssetUrl('/videos/showcase-v3.mp4'),
                 title: 'Autonomous Decision-Making',
                 desc: 'Robotics systems that plan, adapt, and execute.'
               },
               {
-                src: '/videos/v11.mp4',
+                src: resolveAssetUrl('/videos/v11.mp4'),
                 title: 'Precision Robotics',
                 desc: 'Fine motor control engineered for real-world tasks.'
               }

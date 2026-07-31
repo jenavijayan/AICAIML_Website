@@ -1,3 +1,5 @@
+import { resolveAssetUrl } from './lib/assetPaths';
+
 export interface Project {
   id: string;
   title: string;
@@ -154,7 +156,7 @@ export const initialProjects: Project[] = [
     title: 'National AI Skills & Certification Initiative (NASCI)',
     description: 'Empowering over 50,000 engineering students across tier-2 and tier-3 colleges in India with specialized certifications in Deep Learning and NLP, co-designed with industry leaders.',
     category: 'AI Integration',
-    image: '/images/project-nasci-initiative.jpg',
+    image: resolveAssetUrl('/images/project-nasci-initiative.jpg'),
     status: 'Ongoing',
     impact: '50,000+ Students Certified'
   },
@@ -163,7 +165,7 @@ export const initialProjects: Project[] = [
     title: 'AICAIML Autonomous Robotics Sandbox',
     description: 'An open-access simulation and testing lab network for students and startups to design, prototype, and build autonomous rovers and drone systems with cloud-integrated digital twins.',
     category: 'Robotics',
-    image: '/images/project-robotics-sandbox.jpg',
+    image: resolveAssetUrl('/images/project-robotics-sandbox.jpg'),
     status: 'Ongoing',
     impact: '120+ College Club Sandbox Labs'
   },
@@ -172,7 +174,7 @@ export const initialProjects: Project[] = [
     title: 'AI Ethics & Algorithmic Fairness Whitepaper',
     description: 'A multi-stakeholder research collaboration presenting guidelines on ethical deployment of AI/ML systems in healthcare, finance, and public services within the Indian socio-demographic context.',
     category: 'Machine Learning',
-    image: '/images/project-ai-ethics-healthcare.jpg',
+    image: resolveAssetUrl('/images/project-ai-ethics-healthcare.jpg'),
     status: 'Completed',
     impact: 'Adopted as National Advisory'
   },
@@ -181,7 +183,7 @@ export const initialProjects: Project[] = [
     title: 'Smart Agriculture IoT & Edge ML Framework',
     description: 'Affordable IoT sensors and localized edge ML models developed in collaboration with leading agricultural universities to forecast soil moisture, crop disease, and optimize watering schedules.',
     category: 'Machine Learning',
-    image: '/images/project-smart-agriculture.jpg',
+    image: resolveAssetUrl('/images/project-smart-agriculture.jpg'),
     status: 'Upcoming',
     impact: 'Targeting 5,000 Farmers in Phase 1'
   }
@@ -333,9 +335,9 @@ export const initialCourses: Course[] = [
         { title: 'Lesson 4: Building a RAG Pipeline', summary: 'Chunking, embeddings, vector search, and grounding model output in your own documents.' },
         { title: 'Lesson 5: Deployment & Safety', summary: 'Rate limiting, prompt injection defenses, and monitoring model output in production.' }
       ],
-      videoUrl: '/videos/ai-data-stream.mp4',
+      videoUrl: resolveAssetUrl('/videos/ai-data-stream.mp4'),
       videoTitle: 'Lecture: Inside a Transformer Forward Pass',
-      resourceUrl: '/resources/generative-ai-llms-syllabus.txt',
+      resourceUrl: resolveAssetUrl('/resources/generative-ai-llms-syllabus.txt'),
       resourceLabel: 'Full Syllabus & Reading List (TXT)',
       quiz: [
         { question: 'What mechanism allows transformers to weigh the relevance of different words in a sequence?', options: ['Attention', 'Convolution', 'Pooling', 'Backpropagation'], correctIndex: 0 },
@@ -363,9 +365,9 @@ export const initialCourses: Course[] = [
         { title: 'Lesson 4: ROS Fundamentals', summary: 'Nodes, topics, and services — the messaging backbone most robotics stacks are built on.' },
         { title: 'Lesson 5: Capstone Rover Build', summary: 'Assembling the full pipeline into a working autonomous rover demo in the sandbox lab.' }
       ],
-      videoUrl: '/videos/ai-circuit-board.mp4',
+      videoUrl: resolveAssetUrl('/videos/ai-circuit-board.mp4'),
       videoTitle: 'Lecture: Sensor Fusion in Practice',
-      resourceUrl: '/resources/applied-robotics-syllabus.txt',
+      resourceUrl: resolveAssetUrl('/resources/applied-robotics-syllabus.txt'),
       resourceLabel: 'Full Syllabus & Lab Guide (TXT)',
       quiz: [
         { question: 'Sensor fusion is primarily used to:', options: ['Reduce hardware cost', 'Combine noisy sensor data into a reliable estimate', 'Increase battery life', 'Replace the need for control loops'], correctIndex: 1 },
@@ -392,9 +394,9 @@ export const initialCourses: Course[] = [
         { title: 'Lesson 3: Certification Exam Format', summary: 'What the AICAIML assessment covers, how it is scored, and how to pace yourself through it.' },
         { title: 'Lesson 4: Verified Credentialing', summary: 'How your certificate is issued, the unique verification code, and how employers can confirm it is genuine.' }
       ],
-      videoUrl: '/videos/ai-circuit-chip.mp4',
+      videoUrl: resolveAssetUrl('/videos/ai-circuit-chip.mp4'),
       videoTitle: 'Lecture: Structuring a Technical Interview Answer',
-      resourceUrl: '/resources/ai-career-readiness-syllabus.txt',
+      resourceUrl: resolveAssetUrl('/resources/ai-career-readiness-syllabus.txt'),
       resourceLabel: 'Full Syllabus & Interview Guide (TXT)',
       quiz: [
         { question: 'A strong AI/ML portfolio project should primarily demonstrate:', options: ['Visual design skill', 'Clear problem framing and honest evaluation of results', 'The largest possible dataset used', 'Use of the newest library available'], correctIndex: 1 },
@@ -455,14 +457,14 @@ export const leadershipMessages: LeadershipMessage[] = [
     name: 'Shri Ashwini Vaishnaw',
     designation: "Hon'ble Minister of Electronics & IT, Government of India",
     quote: "India's AI strategy is based on the Hon'ble Prime Minister's vision to democratize the use of technology. It aims to address India centric challenges, create economic and employment opportunities for all...",
-    photoUrl: '/images/ashwini_vaishnaw_photo.jpg'
+    photoUrl: resolveAssetUrl('/images/ashwini_vaishnaw_photo.jpg')
   },
   {
     id: 'lead-2',
     name: 'Shri S. Krishnan',
     designation: "Secretary, Ministry of Electronics and IT, Government of India",
     quote: "If India is to become a developed nation, we must ride the wave of technology, and AI is perhaps the most crucial technology driving that transformation. To achieve this, we need inclusive mechanisms that ensure people can access and benefit from AI in meaningful ways.",
-    photoUrl: '/images/s_krishnan_photo.jpg'
+    photoUrl: resolveAssetUrl('/images/s_krishnan_photo.jpg')
   }
 ];
 
