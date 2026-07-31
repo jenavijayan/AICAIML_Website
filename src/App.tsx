@@ -28,7 +28,7 @@ import { UpcomingEvent } from './cmsData';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useFormVerification } from './hooks/useFormVerification';
 
-// Code-split — these are the three heaviest, least-often-visited routes
+// Code-split — these are the heaviest, least-often-visited routes
 // (a rich-content course reader, a 1000+-line multi-form component, and an
 // admin-only dashboard) so the homepage's initial bundle doesn't carry them.
 const CourseDetail = lazy(() => import('./pages/CourseDetail'));
@@ -394,13 +394,13 @@ function AppShell() {
 
             {currentPage === 'login' && <Login setCurrentPage={setCurrentPage} />}
 
-            {currentPage === 'admin' && user?.role === 'admin' && (
-              <Suspense fallback={<RouteFallback />}>
-                <AdminDashboard />
-              </Suspense>
-            )}
+             {currentPage === 'admin' && user?.role === 'admin' && (
+               <Suspense fallback={<RouteFallback />}>
+                 <AdminDashboard />
+               </Suspense>
+              )}
 
-            {currentPage === 'privacy' && <Legal initialSection="privacy" />}
+             {currentPage === 'privacy' && <Legal initialSection="privacy" />}
             {currentPage === 'terms' && <Legal initialSection="terms" />}
           </motion.div>
         </AnimatePresence>

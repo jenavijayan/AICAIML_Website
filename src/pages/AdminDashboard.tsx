@@ -1,996 +1,909 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  ShieldCheck, Users, FileText, Calendar, CreditCard, BookOpen, Newspaper,
-  Loader2, Plus, Trash2, Upload, Mail, Phone, ChevronDown, FolderOpen
+  Shield, Users, FileText, Search, RefreshCw,
+  CheckCircle2, XCircle, AlertCircle, Loader2, Calendar,
+  Mail, Phone, Clock, ChevronDown, Eye, LogOut, BarChart3, CheckCircle,
 } from 'lucide-react';
-import { Button, IconButton, TabList, TabPanel } from '../components/ui';
+import { motion, AnimatePresence } from 'motion/react';
+import { Button, IconButton, Badge, Card, Dialog, DialogHeader } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
+import { useAuth } from '../context/AuthContext';
 
-type Tab = 'overview' | 'enquiries' | 'applications' | 'events' | 'memberships' | 'users' | 'courses' | 'announcements' | 'projects' | 'partners' | 'testimonials';
+type Tab = 'overview' | 'applications' | 'members';
 
-interface OverviewCounts {
+interface AppRow {
+  id: string;
+  name: string;
+  email: string;
+  category: string;
+  status: string;
+  submittedAt: string;
+  emailVerified: boolean;
+  reviewer?: string;
+  membershipNo: string;
+  phone?: string;
+  formData: Record<string, any>;
+  approvalDate?: string;
+  rejectionReason?: string;
+  memberId?: string;
+}
+
+interface OverviewStats {
   enquiries: number;
   applications: number;
   eventRegistrations: number;
   memberships: number;
   users: number;
   courses: number;
-  news: number;
   projects: number;
   partners: number;
   testimonials: number;
+  news: number;
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  student: 'Student',
+  msme: 'MSME',
+  corporate: 'Corporate',
+  school: 'School',
+  university: 'University',
+};
+
+function statusBadge(status: string) {
+  const s = status.toLowerCase();
+  if (s === 'approved') return { variant: 'success' as const, icon: CheckCircle };
+  if (s === 'rejected') return { variant: 'danger' as const, icon: XCircle };
+  return { variant: 'warning' as const, icon: Clock };
+}
+
+function formatDate(iso: string) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleDateString('en-IN', {
+      day: 'numeric', month: 'short', year: 'numeric',
+      timeZone: 'Asia/Kolkata',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function extractName(formData: Record<string, any>, fallback: string): string {
+  return (
+    formData.studentName ||
+    formData.applicantName ||
+    formData.authorizedRepresentativeName ||
+    formData.institutionName ||
+    formData.universityName ||
+    formData.enterpriseName ||
+    formData.organizationName ||
+    fallback
+  );
+}
+
+function extractEmail(formData: Record<string, any>, fallback: string): string {
+  return (formData.emailId || formData.email || fallback).trim().toLowerCase();
+}
+
+function extractPhone(formData: Record<string, any>): string {
+  return formData.mobileNo || formData.phone || '';
+}
+
+function mapApplication(row: any): AppRow {
+  const fd = row.form_data || {};
+  return {
+    id: row.id,
+    name: row.name || extractName(fd, 'Applicant'),
+    email: row.email || extractEmail(fd, 'applicant@aic-aiml.org'),
+    category: row.membership_category || row.category || 'student',
+    status: row.status || 'Pending',
+    submittedAt: row.submitted_at || row.created_at || '',
+    emailVerified: row.email_verified === 'true',
+    reviewer: row.reviewed_by,
+    membershipNo: row.membership_no || '',
+    phone: extractPhone(fd),
+    formData: fd,
+    approvalDate: row.approval_date,
+    rejectionReason: row.rejection_reason,
+    memberId: row.member_id,
+  };
 }
 
 export default function AdminDashboard() {
-  useDocumentMeta('Council Administration', 'AICAIML admin dashboard.');
+  useDocumentMeta('Admin Dashboard', 'Council administration panel for AICAIML membership management.');
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
-  const [overview, setOverview] = useState<OverviewCounts | null>(null);
-  const [rows, setRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionMessageIsError, setActionMessageIsError] = useState(false);
 
-  const [newsForm, setNewsForm] = useState({ title: '', summary: '', category: 'Announcement' });
-  const [newsSubmitting, setNewsSubmitting] = useState(false);
-  const [newsMessage, setNewsMessage] = useState<string | null>(null);
+  // ---- OVERVIEW ----
+  const [stats, setStats] = useState<OverviewStats | null>(null);
+  const [ovLoading, setOvLoading] = useState(false);
+  const [ovError, setOvError] = useState<string | null>(null);
 
-  const [courseForm, setCourseForm] = useState({
-    title: '', description: '', category: 'AI Fundamentals', level: 'Beginner',
-    duration: '', modules: '', access: 'free', topics: '', image: ''
-  });
-  const [courseSubmitting, setCourseSubmitting] = useState(false);
-  const [courseMessage, setCourseMessage] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  // ---- APPLICATIONS ----
+  const [apps, setApps] = useState<AppRow[]>([]);
+  const [appsLoading, setAppsLoading] = useState(false);
+  const [appsError, setAppsError] = useState<string | null>(null);
+  const [appSearch, setAppSearch] = useState('');
+  const [appFilterStatus, setAppFilterStatus] = useState('all');
+  const [appFilterCategory, setAppFilterCategory] = useState('all');
+  const [appActionLoading, setAppActionLoading] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailApp, setDetailApp] = useState<AppRow | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
-  const [projectForm, setProjectForm] = useState({ title: '', description: '', category: 'AI Integration', status: 'Ongoing', impact: '', image: '' });
-  const [projectSubmitting, setProjectSubmitting] = useState(false);
-  const [projectMessage, setProjectMessage] = useState<string | null>(null);
-
-  const [partnerForm, setPartnerForm] = useState({ name: '', type: 'Academic', logoPlaceholder: '' });
-  const [partnerSubmitting, setPartnerSubmitting] = useState(false);
-  const [partnerMessage, setPartnerMessage] = useState<string | null>(null);
-
-  const [testimonialForm, setTestimonialForm] = useState({ name: '', designation: '', organization: '', quote: '', avatarUrl: '' });
-  const [testimonialSubmitting, setTestimonialSubmitting] = useState(false);
-  const [testimonialMessage, setTestimonialMessage] = useState<string | null>(null);
-
-  const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'member' });
-  const [userSubmitting, setUserSubmitting] = useState(false);
-  const [userMessage, setUserMessage] = useState<string | null>(null);
-
-  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
-  const [isPolling, setIsPolling] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // ---- MEMBERS ----
+  const [members, setMembers] = useState<any[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState<string | null>(null);
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberFilterRole, setMemberFilterRole] = useState('all');
 
   const fetchJson = async (url: string) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    try {
-      const res = await fetch(url, { credentials: 'include', signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
-      return await res.json();
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      throw err;
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) {
+      let errMsg = `Request failed (${res.status})`;
+      try {
+        const errBody = await res.json();
+        if (errBody?.error) errMsg = errBody.error;
+      } catch {}
+      throw new Error(errMsg);
     }
+    return res.json();
   };
 
-  const loadOverview = async () => {
-    setLoading(true);
-    setErrorMessage(null);
-    try {
-      setOverview(await fetchJson('/api/admin/overview'));
-      setLastRefreshed(new Date());
-    } catch (err: any) {
-      console.error(err);
-      setErrorMessage(err.message || 'Failed to load overview.');
-    } finally {
-      setLoading(false);
-    }
+  const postJson = async (url: string, body: any) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    let data: any = null;
+    try { data = await res.json(); } catch {}
+    if (!res.ok) throw new Error((data && data.error) || `Request failed (${res.status})`);
+    return data;
   };
 
-  const loadTab = async (tab: Tab) => {
-    const endpoints: Partial<Record<Tab, string>> = {
-      enquiries: '/api/admin/enquiries',
-      applications: '/api/admin/applications',
-      events: '/api/admin/event-registrations',
-      memberships: '/api/admin/memberships',
-      users: '/api/admin/users',
-      courses: '/api/courses',
-      projects: '/api/projects',
-      partners: '/api/partners',
-      testimonials: '/api/testimonials'
-    };
-    const endpoint = endpoints[tab];
-    if (!endpoint) return;
-    setLoading(true);
-    setErrorMessage(null);
+  // ---- OVERVIEW ----
+  const loadOverview = useCallback(async () => {
+    setOvLoading(true);
+    setOvError(null);
     try {
-      setRows(await fetchJson(endpoint));
-      setLastRefreshed(new Date());
+      const data = await fetchJson('/api/admin/overview');
+      setStats(data);
     } catch (err: any) {
-      console.error(err);
-      setRows([]);
-      setErrorMessage(err.message || 'Failed to load records.');
+      setOvError(err.message || 'Failed to load overview.');
     } finally {
-      setLoading(false);
+      setOvLoading(false);
     }
-  };
+  }, []);
+
+  // ---- APPLICATIONS ----
+  const loadApplications = useCallback(async () => {
+    setAppsLoading(true);
+    setAppsError(null);
+    try {
+      const data = await fetchJson('/api/admin/applications');
+      const mapped = (data || []).map(mapApplication);
+      setApps(mapped);
+    } catch (err: any) {
+      setAppsError(err.message || 'Failed to load applications.');
+    } finally {
+      setAppsLoading(false);
+    }
+  }, []);
+
+  const loadMembers = useCallback(async () => {
+    setMembersLoading(true);
+    setMembersError(null);
+    try {
+      const data = await fetchJson('/api/admin/users');
+      setMembers(data || []);
+    } catch (err: any) {
+      setMembersError(err.message || 'Failed to load members.');
+    } finally {
+      setMembersLoading(false);
+    }
+  }, []);
+
+  const handleApprove = useCallback(async (app: AppRow) => {
+    setAppActionLoading(app.id);
+    try {
+      const result = await postJson(`/api/admin/applications/${app.id}/approve`, {});
+      if (result.credentials) {
+        setActionMessage(`Application ${app.id} approved. Member ID: ${result.credentials.memberId} — credentials emailed to ${app.email}.`);
+      } else {
+        setActionMessage(`Application ${app.id} approved. Member credentials already exist.`);
+      }
+      setActionMessageIsError(false);
+      await loadApplications();
+      setTimeout(() => setActionMessage(null), 5000);
+    } catch (err: any) {
+      setActionMessage(err.message || 'Approval failed. Please try again.');
+      setActionMessageIsError(true);
+      setTimeout(() => setActionMessage(null), 5000);
+    } finally {
+      setAppActionLoading(null);
+    }
+  }, [loadApplications]);
+
+  const handleReject = useCallback(async (app: AppRow, reason?: string) => {
+    setAppActionLoading(app.id);
+    try {
+      await postJson(`/api/admin/applications/${app.id}/reject`, { reason: reason || '' });
+      setActionMessage(`Application ${app.id} rejected.`);
+      setActionMessageIsError(false);
+      await loadApplications();
+      setTimeout(() => setActionMessage(null), 3000);
+    } catch (err: any) {
+      setActionMessage(err.message || 'Rejection failed. Please try again.');
+      setActionMessageIsError(true);
+      setTimeout(() => setActionMessage(null), 5000);
+    } finally {
+      setAppActionLoading(null);
+    }
+  }, [loadApplications]);
+
+  const filteredApps = apps.filter((a) => {
+    const q = appSearch.toLowerCase();
+    const matchesSearch =
+      !appSearch ||
+      a.name.toLowerCase().includes(q) ||
+      a.email.toLowerCase().includes(q) ||
+      a.membershipNo.toLowerCase().includes(q) ||
+      a.id.toLowerCase().includes(q);
+    const matchesStatus = appFilterStatus === 'all' || a.status.toLowerCase() === appFilterStatus.toLowerCase();
+    const matchesCategory = appFilterCategory === 'all' || a.category.toLowerCase() === appFilterCategory.toLowerCase();
+    return matchesSearch && matchesStatus && matchesCategory;
+  });
+
+  const filteredMembers = members.filter((m: any) => {
+    const q = memberSearch.toLowerCase();
+    const matchesSearch =
+      !memberSearch ||
+      (m.name && m.name.toLowerCase().includes(q)) ||
+      (m.email && m.email.toLowerCase().includes(q)) ||
+      (m.id && m.id.toLowerCase().includes(q));
+    const matchesRole = memberFilterRole === 'all' || (m.role && m.role.toLowerCase() === memberFilterRole.toLowerCase());
+    return matchesSearch && matchesRole;
+  });
 
   useEffect(() => {
     loadOverview();
-  }, []);
+    loadApplications();
+    loadMembers();
+  }, [loadOverview, loadApplications, loadMembers]);
 
-  useEffect(() => {
-    if (activeTab !== 'overview' && activeTab !== 'announcements') {
-      loadTab(activeTab);
-    }
-  }, [activeTab]);
+  const pendingCount = apps.filter((a) => a.status.toLowerCase() === 'pending').length;
+  const approvedCount = apps.filter((a) => a.status.toLowerCase() === 'approved').length;
+  const rejectedCount = apps.filter((a) => a.status.toLowerCase() === 'rejected').length;
 
-  useEffect(() => {
-    if (!isPolling) return;
-    const interval = setInterval(() => {
-      if (activeTab === 'overview' || activeTab === 'announcements') {
-        loadOverview();
-      } else {
-        loadTab(activeTab);
-      }
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [isPolling, activeTab]);
+  if (!user || user.role !== 'admin') {
+    return (
+      <div id="admin-dashboard-page" className="animate-slideup min-h-screen">
+        <section className="bg-gradient-to-br from-[#071F3F] via-navy to-corp-blue text-white py-20">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-rose-500/10 text-rose-400 mb-6 ring-4 ring-rose-500/20">
+              <Shield className="w-8 h-8" />
+            </div>
+            <h1 className="text-3xl font-bold font-heading mb-4">Access Denied</h1>
+            <p className="text-slate-300 text-sm max-w-md mx-auto">
+              This page is restricted to council developers and administrators.
+              Please sign in with an admin account to access the administration panel.
+            </p>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
-  useEffect(() => {
-    const handleVisibility = () => {
-      setIsPolling(!document.hidden);
-      if (!document.hidden) {
-        if (activeTab === 'overview' || activeTab === 'announcements') {
-          loadOverview();
-        } else {
-          loadTab(activeTab);
-        }
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [activeTab]);
-
-  const handlePublishNews = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newsForm.title || !newsForm.summary) return;
-    setNewsSubmitting(true);
-    setNewsMessage(null);
-    try {
-      const res = await fetch('/api/news/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ ...newsForm, readTime: '3 min read' })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to publish.');
-      setNewsMessage(`Published: "${data.article.title}"`);
-      setNewsForm({ title: '', summary: '', category: 'Announcement' });
-      loadOverview();
-    } catch (err: any) {
-      setNewsMessage(err.message || 'Failed to publish announcement.');
-    } finally {
-      setNewsSubmitting(false);
-    }
-  };
-
-  const handleImageUpload = async (file: File) => {
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('image', file);
-      const res = await fetch('/api/admin/upload', {
-        method: 'POST',
-        credentials: 'include',
-        body: formData
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Upload failed.');
-      setCourseForm((f) => ({ ...f, image: data.url }));
-    } catch (err: any) {
-      setCourseMessage(err.message || 'Image upload failed.');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleCreateCourse = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!courseForm.title || !courseForm.description || !courseForm.duration) return;
-    setCourseSubmitting(true);
-    setCourseMessage(null);
-    try {
-      const res = await fetch('/api/admin/courses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          ...courseForm,
-          modules: Number(courseForm.modules) || 0,
-          topics: courseForm.topics.split(',').map((t) => t.trim()).filter(Boolean)
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create course.');
-      setCourseMessage(`Course created: "${data.course.title}"`);
-      setCourseForm({ title: '', description: '', category: 'AI Fundamentals', level: 'Beginner', duration: '', modules: '', access: 'free', topics: '', image: '' });
-      loadOverview();
-      if (activeTab === 'courses') loadTab('courses');
-    } catch (err: any) {
-      setCourseMessage(err.message || 'Failed to create course.');
-    } finally {
-      setCourseSubmitting(false);
-    }
-  };
-
-  const handleDeleteCourse = async (id: string) => {
-    if (!confirm('Delete this course? This cannot be undone.')) return;
-    try {
-      await fetch(`/api/admin/courses/${id}`, { method: 'DELETE', credentials: 'include' });
-      loadTab('courses');
-      loadOverview();
-    } catch (err: any) {
-      setCourseMessage(err.message || 'Failed to delete course.');
-    }
-  };
-
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!projectForm.title || !projectForm.description || !projectForm.impact) return;
-    setProjectSubmitting(true);
-    setProjectMessage(null);
-    try {
-      const res = await fetch('/api/admin/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(projectForm)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create project.');
-      setProjectMessage(`Project created: "${data.project.title}"`);
-      setProjectForm({ title: '', description: '', category: 'AI Integration', status: 'Ongoing', impact: '', image: '' });
-      loadOverview();
-      if (activeTab === 'projects') loadTab('projects');
-    } catch (err: any) {
-      setProjectMessage(err.message || 'Failed to create project.');
-    } finally {
-      setProjectSubmitting(false);
-    }
-  };
-
-  const handleDeleteProject = async (id: string) => {
-    if (!confirm('Delete this project?')) return;
-    try {
-      await fetch(`/api/admin/projects/${id}`, { method: 'DELETE', credentials: 'include' });
-      loadTab('projects');
-      loadOverview();
-    } catch (err: any) {
-      setProjectMessage(err.message || 'Failed to delete project.');
-    }
-  };
-
-  const handleCreatePartner = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!partnerForm.name || !partnerForm.logoPlaceholder) return;
-    setPartnerSubmitting(true);
-    setPartnerMessage(null);
-    try {
-      const res = await fetch('/api/admin/partners', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(partnerForm)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create partner.');
-      setPartnerMessage(`Partner added: "${data.partner.name}"`);
-      setPartnerForm({ name: '', type: 'Academic', logoPlaceholder: '' });
-      loadOverview();
-      if (activeTab === 'partners') loadTab('partners');
-    } catch (err: any) {
-      setPartnerMessage(err.message || 'Failed to add partner.');
-    } finally {
-      setPartnerSubmitting(false);
-    }
-  };
-
-  const handleDeletePartner = async (id: string) => {
-    if (!confirm('Delete this partner?')) return;
-    try {
-      await fetch(`/api/admin/partners/${id}`, { method: 'DELETE', credentials: 'include' });
-      loadTab('partners');
-      loadOverview();
-    } catch (err: any) {
-      setPartnerMessage(err.message || 'Failed to delete partner.');
-    }
-  };
-
-  const handleCreateTestimonial = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!testimonialForm.name || !testimonialForm.quote) return;
-    setTestimonialSubmitting(true);
-    setTestimonialMessage(null);
-    try {
-      const res = await fetch('/api/admin/testimonials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(testimonialForm)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create testimonial.');
-      setTestimonialMessage(`Testimonial added: "${data.testimonial.name}"`);
-      setTestimonialForm({ name: '', designation: '', organization: '', quote: '', avatarUrl: '' });
-      loadOverview();
-      if (activeTab === 'testimonials') loadTab('testimonials');
-    } catch (err: any) {
-      setTestimonialMessage(err.message || 'Failed to add testimonial.');
-    } finally {
-      setTestimonialSubmitting(false);
-    }
-  };
-
-  const handleDeleteTestimonial = async (id: string) => {
-    if (!confirm('Delete this testimonial?')) return;
-    try {
-      await fetch(`/api/admin/testimonials/${id}`, { method: 'DELETE', credentials: 'include' });
-      loadTab('testimonials');
-      loadOverview();
-    } catch (err: any) {
-      setTestimonialMessage(err.message || 'Failed to delete testimonial.');
-    }
-  };
-
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userForm.name || !userForm.email || !userForm.password) return;
-    setUserSubmitting(true);
-    setUserMessage(null);
-    try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(userForm)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create user.');
-      setUserMessage(`Created ${data.user.role}: ${data.user.email}`);
-      setUserForm({ name: '', email: '', password: '', role: 'member' });
-      loadTab('users');
-      loadOverview();
-    } catch (err: any) {
-      setUserMessage(err.message || 'Failed to create user.');
-    } finally {
-      setUserSubmitting(false);
-    }
-  };
-
-  const parseName = (row: any) => {
-    const fd = row.form_data || {};
-    return fd.studentName || fd.applicantName || fd.authorizedRepresentativeName || fd.institutionName || fd.universityName || '—';
-  };
-
-  const parseEmail = (row: any) => {
-    const fd = row.form_data || {};
-    return fd.emailId || fd.email || '—';
-  };
-
-  const handleApprove = async (id: string) => {
-    setActionLoading(id);
-    setActionMessage(null);
-    try {
-      const res = await fetch(`/api/admin/applications/${id}/approve`, { method: 'POST', credentials: 'include' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to approve.');
-      setActionMessage(`Approved application ${id}.`);
-      loadTab('applications');
-      loadOverview();
-    } catch (err: any) {
-      setActionMessage(err.message || 'Approval failed.');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleReject = async (id: string) => {
-    setActionLoading(id);
-    setActionMessage(null);
-    try {
-      const res = await fetch(`/api/admin/applications/${id}/reject`, { method: 'POST', credentials: 'include' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to reject.');
-      setActionMessage(`Rejected application ${id}.`);
-      loadTab('applications');
-      loadOverview();
-    } catch (err: any) {
-      setActionMessage(err.message || 'Rejection failed.');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const tabs: { id: Tab; label: string; icon: any }[] = [
-    { id: 'overview', label: 'Overview', icon: ShieldCheck },
-    { id: 'enquiries', label: 'Enquiries', icon: Mail },
-    { id: 'applications', label: 'Membership Applications', icon: FileText },
-    { id: 'events', label: 'Event Registrations', icon: Calendar },
-    { id: 'memberships', label: 'Paid Memberships', icon: CreditCard },
-    { id: 'users', label: 'Registered Users', icon: Users },
-    { id: 'courses', label: 'Courses', icon: BookOpen },
-    { id: 'projects', label: 'Projects', icon: FolderOpen },
-    { id: 'partners', label: 'Partners', icon: Users },
-    { id: 'testimonials', label: 'Testimonials', icon: ShieldCheck },
-    { id: 'announcements', label: 'Announcements', icon: Newspaper }
+  const SIDEBAR_TABS = [
+    { id: 'overview', label: 'Overview', icon: BarChart3 },
+    { id: 'applications', label: 'Applications', icon: FileText },
+    { id: 'members', label: 'Members', icon: Users },
   ];
 
-  const handleRefresh = () => {
-    if (activeTab === 'overview' || activeTab === 'announcements') {
-      loadOverview();
-    } else {
-      loadTab(activeTab);
-    }
-  };
-
   return (
-    <div id="admin-dashboard-page" className="animate-slideup min-h-screen bg-slate-50">
-      <section className="bg-navy text-white py-10 border-b-4 border-gold">
+    <div id="admin-dashboard-page" className="min-h-screen bg-slate-50">
+      <section className="bg-gradient-to-br from-[#071F3F] via-navy to-corp-blue text-white py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-2 text-gold text-xs font-bold uppercase tracking-widest">
-            <ShieldCheck className="w-4 h-4" />
-            Admin Dashboard
-          </div>
-          <h1 className="text-3xl font-bold font-heading mt-1 text-gradient-animate-light">Council Administration</h1>
-          <p className="text-slate-300 text-sm mt-1">Manage courses, announcements, and view everyone who has registered or applied.</p>
-          {lastRefreshed && (
-            <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-400">
-              <span className={`inline-block w-2 h-2 rounded-full ${isPolling ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`}></span>
-              <span>Last updated: {lastRefreshed.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-              <span className="text-slate-500">• Auto-refresh {isPolling ? 'ON (30s)' : 'PAUSED'}</span>
+          <div className="flex items-center gap-4">
+            <div className="bg-white/10 text-gold p-3 rounded-xl">
+              <Shield className="w-8 h-8" />
             </div>
-          )}
-          <div className="mt-3">
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-50"
-            >
-              {loading ? 'Refreshing…' : 'Refresh Now'}
-            </button>
+            <div>
+              <h1 className="text-3xl font-bold font-heading">Council Administration Panel</h1>
+              <p className="text-slate-300 text-sm mt-1">
+                Signed in as {user.name} — {user.email}
+              </p>
+            </div>
           </div>
         </div>
       </section>
 
-      {errorMessage && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
-          <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded text-xs flex items-start gap-2">
-            <span>{errorMessage}</span>
-            <button onClick={() => setErrorMessage(null)} className="ml-auto text-rose-600 hover:text-rose-800 font-bold">×</button>
-          </div>
-        </div>
-      )}
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Tabs */}
-        <TabList
-          idPrefix="admin"
-          items={tabs}
-          activeId={activeTab}
-          onChange={(id) => setActiveTab(id as Tab)}
-          className="flex flex-wrap gap-2 mb-8"
-          tabClassName={(selected) =>
-            `flex items-center gap-1.5 px-3.5 py-2 rounded-md text-xs font-bold transition-colors ${
-              selected ? 'bg-navy text-white' : 'bg-white text-slate-600 border border-slate-200 hover:border-corp-blue/40'
-            }`
-          }
-        />
-
-        {/* OVERVIEW */}
-        {activeTab === 'overview' && (
-          <div role="tabpanel" id="admin-panel-overview" aria-labelledby="admin-tab-overview" className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {overview && [
-              { label: 'Enquiries', value: overview.enquiries, icon: Mail },
-              { label: 'Membership Applications', value: overview.applications, icon: FileText },
-              { label: 'Event Registrations', value: overview.eventRegistrations, icon: Calendar },
-              { label: 'Paid Memberships', value: overview.memberships, icon: CreditCard },
-              { label: 'Registered Users', value: overview.users, icon: Users },
-              { label: 'Courses', value: overview.courses, icon: BookOpen },
-              { label: 'Projects', value: overview.projects, icon: BookOpen },
-              { label: 'Partners', value: overview.partners, icon: Users },
-              { label: 'Testimonials', value: overview.testimonials, icon: ShieldCheck },
-              { label: 'News Articles', value: overview.news, icon: Newspaper }
-            ].map((stat, idx) => {
-              const Icon = stat.icon;
-              return (
-                <div key={idx} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                  <Icon className="w-5 h-5 text-corp-blue mb-2" />
-                  <div className="text-2xl font-bold text-navy font-heading">{stat.value}</div>
-                  <div className="text-xs text-slate-500 mt-1">{stat.label}</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* GENERIC TABLE TABS */}
-        {['enquiries', 'events', 'memberships'].includes(activeTab) && (
-          <div role="tabpanel" id={`admin-panel-${activeTab}`} aria-labelledby={`admin-tab-${activeTab}`} className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-            {loading ? (
-              <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+        <div className="flex gap-8">
+          {/* Sidebar */}
+          <nav className="w-64 shrink-0" aria-label="Admin navigation">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-2">
+              {SIDEBAR_TABS.map((tab) => {
+                const Icon = tab.icon;
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as Tab)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${
+                      active
+                        ? 'bg-navy text-white'
+                        : 'text-slate-600 hover:bg-navy/5 hover:text-navy'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+              <div className="border-t border-slate-100 mt-2 pt-2">
+                <button
+                  onClick={logout}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold text-slate-600 hover:bg-rose-50 hover:text-rose-700 transition-all"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Logout</span>
+                </button>
               </div>
-            ) : rows.length === 0 ? (
-              <div className="p-8 text-center text-slate-400 text-sm">No records yet.</div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-left">
-                    {Object.keys(rows[0]).map((key) => (
-                      <th key={key} className="px-4 py-3 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">{key.replace(/_/g, ' ')}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, idx) => (
-                    <tr key={idx} className="border-b border-slate-100 last:border-0">
-                      {Object.values(row).map((val: any, i) => (
-                        <td key={i} className="px-4 py-3 text-slate-600 whitespace-nowrap max-w-xs truncate">
-                          {typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? '—')}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        )}
-
-        {/* USERS */}
-        {activeTab === 'users' && (
-          <div role="tabpanel" id="admin-panel-users" aria-labelledby="admin-tab-users" className="space-y-6">
-            {actionMessage && (
-              <div role="status" className="text-xs text-corp-blue bg-pale-blue/50 p-2.5 rounded">{actionMessage}</div>
-            )}
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-              <h3 className="font-bold text-navy font-heading mb-4 flex items-center gap-2">
-                <Plus className="w-4 h-4 text-corp-blue" />
-                Add New User / Admin
-              </h3>
-              <form onSubmit={handleCreateUser} className="space-y-3">
-                {userMessage && <div role="status" className="text-xs text-corp-blue bg-pale-blue/50 p-2.5 rounded">{userMessage}</div>}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <input aria-label="Full name" required placeholder="Full Name" className="text-xs rounded border border-slate-300 p-2.5" value={userForm.name} onChange={(e) => setUserForm({ ...userForm, name: e.target.value })} />
-                  <input aria-label="Email" required type="email" placeholder="email@example.com" className="text-xs rounded border border-slate-300 p-2.5" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <input aria-label="Password" required type="password" placeholder="Min. 8 characters" className="text-xs rounded border border-slate-300 p-2.5" value={userForm.password} onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} />
-                  <select aria-label="Role" className="text-xs rounded border border-slate-300 p-2.5" value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}>
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
-                <Button type="submit" variant="accent" size="sm" loading={userSubmitting} icon={Plus}>
-                  Create User
-                </Button>
-              </form>
             </div>
+          </nav>
 
-            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-              {loading ? (
-                <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-left">
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Name</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Email</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Role</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Membership</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((u) => (
-                      <tr key={u.id} className="border-b border-slate-100 last:border-0">
-                        <td className="px-4 py-3 font-semibold text-navy">{u.name}</td>
-                        <td className="px-4 py-3 text-slate-500">{u.email}</td>
-                        <td className="px-4 py-3 text-slate-500 capitalize">{u.role}</td>
-                        <td className="px-4 py-3 text-slate-500">{u.membership_plan || '—'}</td>
-                        <td className="px-4 py-3 text-slate-500 capitalize">{u.membership_status}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        )}
+          {/* Main Content */}
+          <main className="flex-1 min-w-0">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              >
+                {/* ---- OVERVIEW TAB ---- */}
+                {activeTab === 'overview' && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-xl font-bold text-navy font-heading">Overview</h2>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon={RefreshCw}
+                        loading={ovLoading}
+                        onClick={loadOverview}
+                      >
+                        Refresh
+                      </Button>
+                    </div>
 
-        {/* MEMBERSHIP APPLICATIONS */}
-        {activeTab === 'applications' && (
-          <div role="tabpanel" id="admin-panel-applications" aria-labelledby="admin-tab-applications" className="space-y-4">
-            {actionMessage && (
-              <div role="status" className="text-xs text-corp-blue bg-pale-blue/50 p-2.5 rounded">{actionMessage}</div>
-            )}
-            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-              {loading ? (
-                <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Loading…
-                </div>
-              ) : rows.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 text-sm">No applications yet.</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-left">
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Name</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Email</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Membership Type</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Applied Date</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Email Verified</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Status</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row) => {
-                      const status = row.status || 'Pending';
-                      const badgeClass =
-                        status === 'Approved'
-                          ? 'bg-emerald-50 text-emerald-800 ring-emerald-600/20'
-                          : status === 'Rejected'
-                            ? 'bg-rose-50 text-rose-800 ring-rose-600/20'
-                            : 'bg-amber-50 text-amber-800 ring-amber-600/20';
-                      return (
-                        <tr key={row.id} className="border-b border-slate-100 last:border-0">
-                          <td className="px-4 py-3 text-slate-700 font-medium">{row.name || parseName(row)}</td>
-                          <td className="px-4 py-3 text-slate-600">{parseEmail(row)}</td>
-                          <td className="px-4 py-3 text-slate-600 capitalize">{row.category?.replace(/^(student|msme|corporate|school|university)$/, (m: string) => m.charAt(0).toUpperCase() + m.slice(1)) || '—'}</td>
-                          <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{row.submitted_at ? new Date(row.submitted_at).toLocaleDateString('en-IN') : '—'}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${
-                              row.email_verified === 'true' ? 'bg-emerald-50 text-emerald-800 ring-emerald-600/20' : 'bg-amber-50 text-amber-800 ring-amber-600/20'
-                            }`}>
-                              {row.email_verified === 'true' ? 'Verified' : 'Unverified'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${badgeClass}`}>
-                              {status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            {status === 'Pending' && (
-                              <div className="flex items-center justify-end gap-2">
-                                <button
-                                  onClick={() => handleApprove(row.id)}
-                                  disabled={actionLoading === row.id}
-                                  className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-                                >
-                                  {actionLoading === row.id ? 'Saving…' : 'Approve'}
-                                </button>
-                                <button
-                                  onClick={() => handleReject(row.id)}
-                                  disabled={actionLoading === row.id}
-                                  className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
-                                >
-                                  {actionLoading === row.id ? 'Saving…' : 'Reject'}
-                                </button>
-                              </div>
+                    {ovError && (
+                      <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-800 rounded-lg p-3 text-xs flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        <span>{ovError}</span>
+                      </div>
+                    )}
+
+                    {stats && (
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        <StatTile label="Applications" value={stats.applications} icon={FileText} color="bg-blue-50 text-blue-700" />
+                        <StatTile label="Members" value={stats.users} icon={Users} color="bg-emerald-50 text-emerald-700" />
+                        <StatTile label="Memberships" value={stats.memberships} icon={Shield} color="bg-purple-50 text-purple-700" />
+                        <StatTile label="Enquiries" value={stats.enquiries} icon={Mail} color="bg-amber-50 text-amber-700" />
+                        <StatTile label="Events Reg." value={stats.eventRegistrations} icon={Calendar} color="bg-rose-50 text-rose-700" />
+                      </div>
+                    )}
+
+                    <Card>
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-semibold text-navy">Application Pipeline</h3>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={FileText}
+                          onClick={() => setActiveTab('applications')}
+                        >
+                          View All Applications
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4 text-center">
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                          <div className="text-2xl font-bold text-amber-800">{pendingCount}</div>
+                          <div className="text-xs text-amber-700">Pending Review</div>
+                        </div>
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                          <div className="text-2xl font-bold text-emerald-800">{approvedCount}</div>
+                          <div className="text-xs text-emerald-700">Approved</div>
+                        </div>
+                        <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                          <div className="text-2xl font-bold text-rose-800">{rejectedCount}</div>
+                          <div className="text-xs text-rose-700">Rejected</div>
+                        </div>
+                      </div>
+                    </Card>
+                  </div>
+                )}
+
+                {/* ---- APPLICATIONS TAB ---- */}
+                {activeTab === 'applications' && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-xl font-bold text-navy font-heading">Membership Applications</h2>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon={RefreshCw}
+                        loading={appsLoading}
+                        onClick={loadApplications}
+                      >
+                        Refresh
+                      </Button>
+                    </div>
+
+                    {actionMessage && (
+                      <div
+                        role={actionMessageIsError ? 'alert' : 'status'}
+                        className={`p-3 rounded-lg text-xs flex items-start gap-2 ${
+                          actionMessageIsError
+                            ? 'bg-rose-50 border border-rose-200 text-rose-800'
+                            : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                        }`}
+                      >
+                        {actionMessageIsError ? (
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        )}
+                        <span>{actionMessage}</span>
+                      </div>
+                    )}
+
+                    {/* Filters */}
+                    <Card className="p-4">
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Search by name, email, membership no..."
+                            value={appSearch}
+                            onChange={(e) => setAppSearch(e.target.value)}
+                            className="w-full pl-10 pr-3 py-2 text-sm rounded-md border border-slate-300 focus:border-corp-blue focus:outline-none"
+                          />
+                        </div>
+                        <select
+                          value={appFilterStatus}
+                          onChange={(e) => setAppFilterStatus(e.target.value)}
+                          className="px-3 py-2 text-sm rounded-md border border-slate-300 focus:border-corp-blue focus:outline-none bg-white"
+                        >
+                          <option value="all">All Statuses</option>
+                          <option value="pending">Pending</option>
+                          <option value="approved">Approved</option>
+                          <option value="rejected">Rejected</option>
+                        </select>
+                        <select
+                          value={appFilterCategory}
+                          onChange={(e) => setAppFilterCategory(e.target.value)}
+                          className="px-3 py-2 text-sm rounded-md border border-slate-300 focus:border-corp-blue focus:outline-none bg-white"
+                        >
+                          <option value="all">All Categories</option>
+                          <option value="student">Student</option>
+                          <option value="msme">MSME</option>
+                          <option value="corporate">Corporate</option>
+                          <option value="school">School</option>
+                          <option value="university">University</option>
+                        </select>
+                      </div>
+                    </Card>
+
+                    {/* Applications Table */}
+                    <Card className="p-0">
+                      {appsError && (
+                        <div role="alert" className="bg-rose-50 border-b border-rose-200 text-rose-800 p-3 text-xs flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                          <span>{appsError}</span>
+                        </div>
+                      )}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-left">
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Applicant</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Membership No</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Category</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Status</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Submitted</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {appsLoading ? (
+                              <tr>
+                                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                                  Loading applications...
+                                </td>
+                              </tr>
+                            ) : filteredApps.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                                  No applications match your filters.
+                                </td>
+                              </tr>
+                            ) : (
+                              filteredApps.map((app) => {
+                                const badge = statusBadge(app.status);
+                                const Icon = badge.icon;
+                                return (
+                                  <tr key={app.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">
+                                    <td className="px-4 py-3">
+                                      <div>
+                                        <div className="font-semibold text-navy">{app.name}</div>
+                                        <div className="text-xs text-slate-500 flex items-center gap-1">
+                                          <Mail className="w-3 h-3" />
+                                          {app.email}
+                                        </div>
+                                        {app.phone && (
+                                          <div className="text-xs text-slate-400 flex items-center gap-1">
+                                            <Phone className="w-3 h-3" />
+                                            {app.phone}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <code className="font-mono text-xs bg-slate-100 px-2 py-1 rounded text-navy">{app.membershipNo}</code>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <Badge variant="info">{CATEGORY_LABELS[app.category.toLowerCase()] || app.category}</Badge>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <Badge variant={badge.variant} icon={Icon}>
+                                        {app.status}
+                                      </Badge>
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-500">
+                                      {formatDate(app.submittedAt)}
+                                    </td>
+                                    <td className="px-4 py-3 text-right">
+                                      <div className="flex items-center justify-end gap-1">
+                                        <button
+                                          onClick={() => { setDetailApp(app); setDetailOpen(true); }}
+                                          className="p-1 text-slate-400 hover:text-corp-blue transition-colors"
+                                          aria-label={`View ${app.id}`}
+                                        >
+                                          <Eye className="w-4 h-4" />
+                                        </button>
+                                        {app.status.toLowerCase() === 'pending' && (
+                                          <>
+                                            <button
+                                              onClick={() => {
+                                                if (confirm(`Approve application ${app.id}? Login credentials will be generated and emailed to ${app.email}.`)) {
+                                                  handleApprove(app);
+                                                }
+                                              }}
+                                              className="p-1 text-slate-400 hover:text-emerald-600 transition-colors"
+                                              aria-label={`Approve ${app.id}`}
+                                              disabled={appActionLoading === app.id}
+                                            >
+                                              {appActionLoading === app.id ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                              ) : (
+                                                <CheckCircle2 className="w-4 h-4" />
+                                              )}
+                                            </button>
+                                            <button
+                                              onClick={() => { setDetailApp(app); setRejectReason(''); setDetailOpen(true); }}
+                                              className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
+                                              aria-label={`Reject ${app.id}`}
+                                              disabled={appActionLoading === app.id}
+                                            >
+                                              <XCircle className="w-4 h-4" />
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })
                             )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        )}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="px-4 py-3 border-t border-slate-200 text-xs text-slate-500">
+                        {filteredApps.length} of {apps.length} applications shown
+                      </div>
+                    </Card>
+                  </div>
+                )}
 
-        {/* COURSES */}
-        {activeTab === 'courses' && (
-          <div role="tabpanel" id="admin-panel-courses" aria-labelledby="admin-tab-courses" className="space-y-6">
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-              <h3 className="font-bold text-navy font-heading mb-4 flex items-center gap-2">
-                <Plus className="w-4 h-4 text-corp-blue" />
-                Upload a New Course
-              </h3>
-              <form onSubmit={handleCreateCourse} className="space-y-3">
-                {courseMessage && <div role="status" className="text-xs text-corp-blue bg-pale-blue/50 p-2.5 rounded">{courseMessage}</div>}
-                <div className="grid grid-cols-2 gap-3">
-                  <input aria-label="Course title" required placeholder="Course title" className="text-xs rounded border border-slate-300 p-2.5" value={courseForm.title} onChange={(e) => setCourseForm({ ...courseForm, title: e.target.value })} />
-                  <input aria-label="Duration" required placeholder="Duration (e.g., 4 hrs)" className="text-xs rounded border border-slate-300 p-2.5" value={courseForm.duration} onChange={(e) => setCourseForm({ ...courseForm, duration: e.target.value })} />
-                </div>
-                <textarea aria-label="Description" required rows={2} placeholder="Description" className="w-full text-xs rounded border border-slate-300 p-2.5" value={courseForm.description} onChange={(e) => setCourseForm({ ...courseForm, description: e.target.value })} />
-                <div className="grid grid-cols-4 gap-3">
-                  <select aria-label="Category" className="text-xs rounded border border-slate-300 p-2.5" value={courseForm.category} onChange={(e) => setCourseForm({ ...courseForm, category: e.target.value })}>
-                    {['AI Fundamentals', 'Machine Learning', 'Robotics', 'Generative AI', 'Career & Ethics'].map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <select aria-label="Level" className="text-xs rounded border border-slate-300 p-2.5" value={courseForm.level} onChange={(e) => setCourseForm({ ...courseForm, level: e.target.value })}>
-                    {['Beginner', 'Intermediate', 'Advanced'].map((l) => <option key={l} value={l}>{l}</option>)}
-                  </select>
-                  <select aria-label="Access" className="text-xs rounded border border-slate-300 p-2.5" value={courseForm.access} onChange={(e) => setCourseForm({ ...courseForm, access: e.target.value })}>
-                    <option value="free">Free</option>
-                    <option value="membership">Membership</option>
-                  </select>
-                  <input aria-label="Number of modules" placeholder="Modules (#)" type="number" className="text-xs rounded border border-slate-300 p-2.5" value={courseForm.modules} onChange={(e) => setCourseForm({ ...courseForm, modules: e.target.value })} />
-                </div>
-                <input aria-label="Topics (comma-separated)" placeholder="Topics (comma-separated)" className="w-full text-xs rounded border border-slate-300 p-2.5" value={courseForm.topics} onChange={(e) => setCourseForm({ ...courseForm, topics: e.target.value })} />
+                {/* ---- MEMBERS TAB ---- */}
+                {activeTab === 'members' && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-xl font-bold text-navy font-heading">Council Members</h2>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon={RefreshCw}
+                        loading={membersLoading}
+                        onClick={loadMembers}
+                      >
+                        Refresh
+                      </Button>
+                    </div>
 
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1.5 px-3 py-2 border border-slate-300 rounded text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer">
-                    <Upload className="w-3.5 h-3.5" aria-hidden="true" />
-                    {uploading ? 'Uploading…' : 'Upload Thumbnail Image'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0])}
-                    />
-                  </label>
-                  {courseForm.image && <img src={courseForm.image} alt="Course thumbnail preview" width={40} height={40} className="w-10 h-10 rounded object-cover border border-slate-200" />}
-                </div>
+                    {actionMessage && (
+                      <div
+                        role={actionMessageIsError ? 'alert' : 'status'}
+                        className={`p-3 rounded-lg text-xs flex items-start gap-2 ${
+                          actionMessageIsError
+                            ? 'bg-rose-50 border border-rose-200 text-rose-800'
+                            : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                        }`}
+                      >
+                        {actionMessageIsError ? (
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        )}
+                        <span>{actionMessage}</span>
+                      </div>
+                    )}
 
-                <Button type="submit" variant="accent" size="sm" loading={courseSubmitting} icon={Plus}>
-                  Publish Course
-                </Button>
-              </form>
-            </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-              {loading ? (
-                <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-left">
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Title</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Category</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Access</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((c) => (
-                      <tr key={c.id} className="border-b border-slate-100 last:border-0">
-                        <td className="px-4 py-3 font-semibold text-navy">{c.title}</td>
-                        <td className="px-4 py-3 text-slate-500">{c.category}</td>
-                        <td className="px-4 py-3 text-slate-500 capitalize">{c.access}</td>
-                        <td className="px-4 py-3 text-right">
-                          <IconButton
-                            icon={Trash2}
-                            label={`Delete course "${c.title}"`}
-                            size="sm"
-                            className="text-rose-600 hover:text-rose-800 hover:bg-rose-50"
-                            onClick={() => handleDeleteCourse(c.id)}
+                    <Card className="p-4">
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Search by name, email, member ID..."
+                            value={memberSearch}
+                            onChange={(e) => setMemberSearch(e.target.value)}
+                            className="w-full pl-10 pr-3 py-2 text-sm rounded-md border border-slate-300 focus:border-corp-blue focus:outline-none"
                           />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        )}
+                        </div>
+                        <select
+                          value={memberFilterRole}
+                          onChange={(e) => setMemberFilterRole(e.target.value)}
+                          className="px-3 py-2 text-sm rounded-md border border-slate-300 focus:border-corp-blue focus:outline-none bg-white"
+                        >
+                          <option value="all">All Roles</option>
+                          <option value="admin">Admin</option>
+                          <option value="member">Member</option>
+                        </select>
+                      </div>
+                    </Card>
 
-        {/* PROJECTS */}
-        {activeTab === 'projects' && (
-          <div role="tabpanel" id="admin-panel-projects" aria-labelledby="admin-tab-projects" className="space-y-6">
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-              <h3 className="font-bold text-navy font-heading mb-4 flex items-center gap-2">
-                <Plus className="w-4 h-4 text-corp-blue" />
-                Add a New Project
-              </h3>
-              <form onSubmit={handleCreateProject} className="space-y-3">
-                {projectMessage && <div role="status" className="text-xs text-corp-blue bg-pale-blue/50 p-2.5 rounded">{projectMessage}</div>}
-                <div className="grid grid-cols-2 gap-3">
-                  <input aria-label="Project title" required placeholder="Project title" className="text-xs rounded border border-slate-300 p-2.5" value={projectForm.title} onChange={(e) => setProjectForm({ ...projectForm, title: e.target.value })} />
-                  <select aria-label="Category" className="text-xs rounded border border-slate-300 p-2.5" value={projectForm.category} onChange={(e) => setProjectForm({ ...projectForm, category: e.target.value })}>
-                    {['AI Integration', 'Robotics', 'Machine Learning', 'Academia'].map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <textarea aria-label="Description" required rows={2} placeholder="Description" className="w-full text-xs rounded border border-slate-300 p-2.5" value={projectForm.description} onChange={(e) => setProjectForm({ ...projectForm, description: e.target.value })} />
-                <div className="grid grid-cols-2 gap-3">
-                  <select aria-label="Status" className="text-xs rounded border border-slate-300 p-2.5" value={projectForm.status} onChange={(e) => setProjectForm({ ...projectForm, status: e.target.value })}>
-                    {['Ongoing', 'Completed', 'Upcoming'].map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <input aria-label="Impact" required placeholder="Impact metric" className="text-xs rounded border border-slate-300 p-2.5" value={projectForm.impact} onChange={(e) => setProjectForm({ ...projectForm, impact: e.target.value })} />
-                </div>
-                <input aria-label="Image URL" placeholder="Image URL (optional)" className="w-full text-xs rounded border border-slate-300 p-2.5" value={projectForm.image} onChange={(e) => setProjectForm({ ...projectForm, image: e.target.value })} />
-                <Button type="submit" variant="accent" size="sm" loading={projectSubmitting} icon={Plus}>
-                  Add Project
-                </Button>
-              </form>
-            </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-              {loading ? (
-                <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-left">
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Title</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Category</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Status</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((p) => (
-                      <tr key={p.id} className="border-b border-slate-100 last:border-0">
-                        <td className="px-4 py-3 font-semibold text-navy">{p.title}</td>
-                        <td className="px-4 py-3 text-slate-500">{p.category}</td>
-                        <td className="px-4 py-3 text-slate-500 capitalize">{p.status}</td>
-                        <td className="px-4 py-3 text-right">
-                          <IconButton
-                            icon={Trash2}
-                            label={`Delete project "${p.title}"`}
-                            size="sm"
-                            className="text-rose-600 hover:text-rose-800 hover:bg-rose-50"
-                            onClick={() => handleDeleteProject(p.id)}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* PARTNERS */}
-        {activeTab === 'partners' && (
-          <div role="tabpanel" id="admin-panel-partners" aria-labelledby="admin-tab-partners" className="space-y-6">
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-              <h3 className="font-bold text-navy font-heading mb-4 flex items-center gap-2">
-                <Plus className="w-4 h-4 text-corp-blue" />
-                Add a New Partner
-              </h3>
-              <form onSubmit={handleCreatePartner} className="space-y-3">
-                {partnerMessage && <div role="status" className="text-xs text-corp-blue bg-pale-blue/50 p-2.5 rounded">{partnerMessage}</div>}
-                <div className="grid grid-cols-2 gap-3">
-                  <input aria-label="Partner name" required placeholder="Partner name" className="text-xs rounded border border-slate-300 p-2.5" value={partnerForm.name} onChange={(e) => setPartnerForm({ ...partnerForm, name: e.target.value })} />
-                  <select aria-label="Type" className="text-xs rounded border border-slate-300 p-2.5" value={partnerForm.type} onChange={(e) => setPartnerForm({ ...partnerForm, type: e.target.value })}>
-                    {['Academic', 'Corporate', 'Government', 'Startup'].map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <input aria-label="Logo placeholder" required placeholder="Logo placeholder (e.g., IITM)" className="w-full text-xs rounded border border-slate-300 p-2.5" value={partnerForm.logoPlaceholder} onChange={(e) => setPartnerForm({ ...partnerForm, logoPlaceholder: e.target.value })} />
-                <Button type="submit" variant="accent" size="sm" loading={partnerSubmitting} icon={Plus}>
-                  Add Partner
-                </Button>
-              </form>
-            </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-              {loading ? (
-                <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-left">
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Name</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Type</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((p) => (
-                      <tr key={p.id} className="border-b border-slate-100 last:border-0">
-                        <td className="px-4 py-3 font-semibold text-navy">{p.name}</td>
-                        <td className="px-4 py-3 text-slate-500">{p.type}</td>
-                        <td className="px-4 py-3 text-right">
-                          <IconButton
-                            icon={Trash2}
-                            label={`Delete partner "${p.name}"`}
-                            size="sm"
-                            className="text-rose-600 hover:text-rose-800 hover:bg-rose-50"
-                            onClick={() => handleDeletePartner(p.id)}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TESTIMONIALS */}
-        {activeTab === 'testimonials' && (
-          <div role="tabpanel" id="admin-panel-testimonials" aria-labelledby="admin-tab-testimonials" className="space-y-6">
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-              <h3 className="font-bold text-navy font-heading mb-4 flex items-center gap-2">
-                <Plus className="w-4 h-4 text-corp-blue" />
-                Add a New Testimonial
-              </h3>
-              <form onSubmit={handleCreateTestimonial} className="space-y-3">
-                {testimonialMessage && <div role="status" className="text-xs text-corp-blue bg-pale-blue/50 p-2.5 rounded">{testimonialMessage}</div>}
-                <div className="grid grid-cols-2 gap-3">
-                  <input aria-label="Name" required placeholder="Name" className="text-xs rounded border border-slate-300 p-2.5" value={testimonialForm.name} onChange={(e) => setTestimonialForm({ ...testimonialForm, name: e.target.value })} />
-                  <input aria-label="Designation" required placeholder="Designation" className="text-xs rounded border border-slate-300 p-2.5" value={testimonialForm.designation} onChange={(e) => setTestimonialForm({ ...testimonialForm, designation: e.target.value })} />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <input aria-label="Organization" required placeholder="Organization" className="text-xs rounded border border-slate-300 p-2.5" value={testimonialForm.organization} onChange={(e) => setTestimonialForm({ ...testimonialForm, organization: e.target.value })} />
-                  <input aria-label="Avatar URL" required placeholder="Avatar URL" className="text-xs rounded border border-slate-300 p-2.5" value={testimonialForm.avatarUrl} onChange={(e) => setTestimonialForm({ ...testimonialForm, avatarUrl: e.target.value })} />
-                </div>
-                <textarea aria-label="Quote" required rows={3} placeholder="Quote" className="w-full text-xs rounded border border-slate-300 p-2.5" value={testimonialForm.quote} onChange={(e) => setTestimonialForm({ ...testimonialForm, quote: e.target.value })} />
-                <Button type="submit" variant="accent" size="sm" loading={testimonialSubmitting} icon={Plus}>
-                  Add Testimonial
-                </Button>
-              </form>
-            </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-              {loading ? (
-                <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-left">
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Name</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Organization</th>
-                      <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((t) => (
-                      <tr key={t.id} className="border-b border-slate-100 last:border-0">
-                        <td className="px-4 py-3 font-semibold text-navy">{t.name}</td>
-                        <td className="px-4 py-3 text-slate-500">{t.organization}</td>
-                        <td className="px-4 py-3 text-right">
-                          <IconButton
-                            icon={Trash2}
-                            label={`Delete testimonial "${t.name}"`}
-                            size="sm"
-                            className="text-rose-600 hover:text-rose-800 hover:bg-rose-50"
-                            onClick={() => handleDeleteTestimonial(t.id)}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ANNOUNCEMENTS */}
-        {activeTab === 'announcements' && (
-          <div role="tabpanel" id="admin-panel-announcements" aria-labelledby="admin-tab-announcements" className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm max-w-xl">
-            <h3 className="font-bold text-navy font-heading mb-4 flex items-center gap-2">
-              <Plus className="w-4 h-4 text-corp-blue" />
-              Publish an Announcement
-            </h3>
-            <form onSubmit={handlePublishNews} className="space-y-3">
-              {newsMessage && <div role="status" className="text-xs text-corp-blue bg-pale-blue/50 p-2.5 rounded">{newsMessage}</div>}
-              <input aria-label="Title" required placeholder="Title" className="w-full text-xs rounded border border-slate-300 p-2.5" value={newsForm.title} onChange={(e) => setNewsForm({ ...newsForm, title: e.target.value })} />
-              <textarea aria-label="Summary" required rows={3} placeholder="Summary" className="w-full text-xs rounded border border-slate-300 p-2.5" value={newsForm.summary} onChange={(e) => setNewsForm({ ...newsForm, summary: e.target.value })} />
-              <select aria-label="Category" className="w-full text-xs rounded border border-slate-300 p-2.5" value={newsForm.category} onChange={(e) => setNewsForm({ ...newsForm, category: e.target.value })}>
-                <option value="Announcement">Announcement</option>
-                <option value="Press Release">Press Release</option>
-                <option value="Industry News">Industry News</option>
-              </select>
-              <Button type="submit" variant="accent" size="sm" loading={newsSubmitting} icon={Plus}>
-                Publish to Feed
-              </Button>
-            </form>
-          </div>
-        )}
+                    <Card className="p-0">
+                      {membersError && (
+                        <div role="alert" className="bg-rose-50 border-b border-rose-200 text-rose-800 p-3 text-xs flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                          <span>{membersError}</span>
+                        </div>
+                      )}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-left">
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Member ID</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Name</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Email</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Role</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Plan</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Status</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Permissions</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Created</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {membersLoading ? (
+                              <tr>
+                                <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
+                                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                                  Loading members...
+                                </td>
+                              </tr>
+                            ) : filteredMembers.length === 0 ? (
+                              <tr>
+                                <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
+                                  No members match your search.
+                                </td>
+                              </tr>
+                            ) : (
+                              filteredMembers.map((m) => (
+                                <tr key={m.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">
+                                  <td className="px-4 py-3">
+                                    <code className="font-mono text-xs bg-slate-100 px-2 py-1 rounded text-navy">{m.id}</code>
+                                  </td>
+                                  <td className="px-4 py-3 font-semibold text-navy">{m.name}</td>
+                                  <td className="px-4 py-3 text-slate-600">{m.email}</td>
+                                  <td className="px-4 py-3">
+                                    <Badge variant={m.role === 'admin' ? 'danger' : 'info'}>{m.role}</Badge>
+                                  </td>
+                                  <td className="px-4 py-3 text-slate-600">{m.membershipPlan || '—'}</td>
+                                  <td className="px-4 py-3">
+                                    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${m.membershipStatus === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                                      {m.membershipStatus}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <div className="flex flex-wrap gap-1">
+                                      {(m.permissions || []).slice(0, 2).map((p: string) => (
+                                        <span key={p} className="text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{p.replace('access_', '')}</span>
+                                      ))}
+                                      {(m.permissions || []).length > 2 && (
+                                        <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">+{(m.permissions || []).length - 2}</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-slate-500">{formatDate(m.createdAt)}</td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="px-4 py-3 border-t border-slate-200 text-xs text-slate-500">
+                        {filteredMembers.length} of {members.length} members shown
+                      </div>
+                    </Card>
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
       </div>
+
+      {/* ---- Application Detail / Reject Dialog ---- */}
+      <Dialog
+        open={detailOpen}
+        onClose={() => { setDetailOpen(false); setDetailApp(null); setRejectReason(''); }}
+        label="Application details"
+        className="max-w-2xl"
+      >
+        {detailApp && (
+          <>
+            <DialogHeader
+              eyebrow="Application Details"
+              title={detailApp.name}
+              onClose={() => { setDetailOpen(false); setDetailApp(null); setRejectReason(''); }}
+            />
+            <div className="p-6 overflow-y-auto space-y-5">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="block text-xs text-slate-500">Application ID</span>
+                  <code className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">{detailApp.id}</code>
+                </div>
+                <div>
+                  <span className="block text-xs text-slate-500">Membership No</span>
+                  <code className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">{detailApp.membershipNo}</code>
+                </div>
+                <div>
+                  <span className="block text-xs text-slate-500">Email</span>
+                  <span className="font-semibold text-navy">{detailApp.email}</span>
+                </div>
+                <div>
+                  <span className="block text-xs text-slate-500">Phone</span>
+                  <span className="text-navy">{detailApp.phone || '—'}</span>
+                </div>
+                <div>
+                  <span className="block text-xs text-slate-500">Category</span>
+                  <Badge variant="info">{CATEGORY_LABELS[detailApp.category.toLowerCase()] || detailApp.category}</Badge>
+                </div>
+                <div>
+                  <span className="block text-xs text-slate-500">Status</span>
+                  <Badge {...{ variant: statusBadge(detailApp.status).variant }} icon={statusBadge(detailApp.status).icon}>
+                    {detailApp.status}
+                  </Badge>
+                </div>
+                <div>
+                  <span className="block text-xs text-slate-500">Submitted</span>
+                  <span className="text-navy">{formatDate(detailApp.submittedAt)}</span>
+                </div>
+                <div>
+                  <span className="block text-xs text-slate-500">Email Verified</span>
+                  <span className="text-navy">{detailApp.emailVerified ? 'Yes' : 'No'}</span>
+                </div>
+              </div>
+
+              {/* Form Data */}
+              <div>
+                <h4 className="font-semibold text-navy text-sm mb-2">Form Data</h4>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 max-h-48 overflow-y-auto">
+                  <pre className="text-xs text-slate-700 whitespace-pre-wrap font-mono">
+                    {JSON.stringify(detailApp.formData, null, 2)}
+                  </pre>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-2">
+                {detailApp.status.toLowerCase() === 'pending' && (
+                  <>
+                    <Button
+                      icon={CheckCircle2}
+                      variant="primary"
+                      loading={appActionLoading === detailApp.id}
+                      onClick={() => handleApprove(detailApp)}
+                      disabled={appActionLoading === detailApp.id}
+                    >
+                      Approve Application
+                    </Button>
+                    <div className="flex flex-col gap-2 flex-1">
+                      <textarea
+                        placeholder="Rejection reason (optional — will be included in the rejection email)"
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        rows={3}
+                        className="w-full text-xs rounded-md border border-slate-300 px-3 py-2 focus:border-corp-blue focus:outline-none resize-y"
+                        maxLength={500}
+                      />
+                      <Button
+                        icon={XCircle}
+                        variant="danger"
+                        loading={appActionLoading === detailApp.id}
+                        onClick={() => {
+                          if (confirm(`Reject application ${detailApp.id}${rejectReason ? ' — the reason will be emailed to the applicant.' : ' — no reason provided.'}`)) {
+                            handleReject(detailApp, rejectReason);
+                            setDetailOpen(false);
+                            setDetailApp(null);
+                            setRejectReason('');
+                          }
+                        }}
+                        disabled={appActionLoading === detailApp.id}
+                      >
+                        Reject Application
+                      </Button>
+                    </div>
+                  </>
+                )}
+                {detailApp.status.toLowerCase() === 'approved' && (
+                  <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-sm">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Approved on {formatDate(detailApp.approvalDate || '')}
+                    {detailApp.memberId && (
+                      <>
+                        <span className="mx-1">·</span>
+                        <code className="font-mono text-xs bg-white px-1.5 py-0.5 rounded border border-emerald-200">{detailApp.memberId}</code>
+                      </>
+                    )}
+                  </div>
+                )}
+                {detailApp.status.toLowerCase() === 'rejected' && (
+                  <div className="flex items-center gap-2 text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-sm">
+                    <XCircle className="w-4 h-4" />
+                    Rejected
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </Dialog>
+    </div>
+  );
+}
+
+function StatTile({ label, value, icon: Icon, color }: {
+  label: string; value: number; icon: React.ElementType; color: string;
+}) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 text-center">
+      <div className={`inline-flex items-center justify-center w-10 h-10 rounded-lg mb-2 ${color}`}>
+        <Icon className="w-5 h-5" />
+      </div>
+      <div className="text-2xl font-bold text-navy">{value}</div>
+      <div className="text-xs text-slate-500">{label}</div>
     </div>
   );
 }

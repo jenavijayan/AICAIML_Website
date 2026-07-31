@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import {
   User, Building, BookOpen, GraduationCap, Server, HelpCircle,
-  CheckCircle, ArrowLeft, Loader2, AlertCircle, Sparkles, Mail, Eye
+  CheckCircle, ArrowLeft, Loader2, AlertCircle, Sparkles, Mail, Eye, Upload
 } from 'lucide-react';
 import { Button } from './ui';
 import { useFormVerification } from '../hooks/useFormVerification';
@@ -29,6 +29,18 @@ export default function MembershipForms({ category, onBack }: FormProps) {
     const rand = Math.floor(100000 + Math.random() * 900000);
     setProvisionalNo(`AIC-${code}-${rand}`);
   }, [category]);
+
+  // Shared registration fields for all form categories
+  const [commonForm, setCommonForm] = useState({
+    fullName: '',
+    email: '',
+    mobile: '',
+    state: '',
+    city: '',
+    documentFile: null as File | null,
+    documentName: '',
+    termsAccepted: false
+  });
 
   // Form States
   const [studentForm, setStudentForm] = useState({
@@ -148,16 +160,7 @@ export default function MembershipForms({ category, onBack }: FormProps) {
     }
   };
 
-  const getCurrentEmail = () => {
-    switch (category) {
-      case 'student': return studentForm.emailId;
-      case 'msme': return msmeForm.emailId;
-      case 'corporate': return corporateForm.emailId;
-      case 'school': return schoolForm.emailId;
-      case 'university': return universityForm.emailId;
-      default: return '';
-    }
-  };
+  const getCurrentEmail = () => commonForm.email;
 
   const {
     step: verificationStep,
@@ -194,51 +197,47 @@ export default function MembershipForms({ category, onBack }: FormProps) {
 
     // Dynamic extraction of appropriate form payload
     let payload: any = {};
-    let isDeclared = false;
-    let emailCheck = '';
-    let mobileCheck = '';
 
     if (category === 'student') {
       payload = { ...studentForm, provisionalNo };
-      isDeclared = studentForm.declaration;
-      emailCheck = studentForm.emailId;
-      mobileCheck = studentForm.mobileNo;
     } else if (category === 'msme') {
       payload = { ...msmeForm, provisionalNo };
-      isDeclared = msmeForm.declaration;
-      emailCheck = msmeForm.emailId;
-      mobileCheck = msmeForm.mobileNo;
     } else if (category === 'corporate') {
       payload = { ...corporateForm, provisionalNo };
-      isDeclared = corporateForm.declaration;
-      emailCheck = corporateForm.emailId;
-      mobileCheck = corporateForm.mobileNo;
     } else if (category === 'school') {
       payload = { ...schoolForm, provisionalNo };
-      isDeclared = schoolForm.declaration;
-      emailCheck = schoolForm.emailId;
-      mobileCheck = schoolForm.mobileNo;
     } else if (category === 'university') {
       payload = { ...universityForm, provisionalNo };
-      isDeclared = universityForm.declaration;
-      emailCheck = universityForm.emailId;
-      mobileCheck = universityForm.mobileNo;
     }
 
+    payload = {
+      ...payload,
+      ...commonForm,
+      documentName: commonForm.documentFile?.name || commonForm.documentName,
+      provisionalNo
+    };
+    delete payload.documentFile;
+
     // Client-side Validation Checks
-    if (!isDeclared) {
-      setError('You must accept the mandatory declaration before submitting.');
+    if (!commonForm.termsAccepted) {
+      setError('You must accept the terms and conditions before submitting.');
       setLoading(false);
       return;
     }
 
-    if (!emailCheck || !emailCheck.includes('@')) {
+    if (!commonForm.fullName || commonForm.fullName.trim().length < 2) {
+      setError('Please provide your full name or organization name.');
+      setLoading(false);
+      return;
+    }
+
+    if (!commonForm.email || !commonForm.email.includes('@')) {
       setError('Please provide a valid email address.');
       setLoading(false);
       return;
     }
 
-    if (!mobileCheck || mobileCheck.length < 10) {
+    if (!commonForm.mobile || commonForm.mobile.length < 10) {
       setError('Please provide a valid mobile number (minimum 10 digits).');
       setLoading(false);
       return;
@@ -257,14 +256,17 @@ export default function MembershipForms({ category, onBack }: FormProps) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
+      const formPayload = new FormData();
+      formPayload.append('category', category);
+      formPayload.append('formData', JSON.stringify(payload));
+      formPayload.append('honeypot', honeypot);
+      if (commonForm.documentFile) {
+        formPayload.append('document', commonForm.documentFile);
+      }
+
       const response = await fetch('/api/membership/submit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          category,
-          formData: payload,
-          honeypot
-        }),
+        body: formPayload,
         signal: controller.signal,
         credentials: 'include'
       });
@@ -410,6 +412,114 @@ export default function MembershipForms({ category, onBack }: FormProps) {
             onChange={(e) => setHoneypot(e.target.value)}
             autoComplete="off"
           />
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <User className="w-4 h-4 text-corp-blue" />
+            Common Registration Details
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="commonForm-fullName" className="block text-sm font-semibold text-slate-700 mb-1">Full Name / Organization Name *</label>
+              <input id="commonForm-fullName"
+                type="text"
+                required
+                placeholder="Your name or organization"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-corp-blue focus:outline-none"
+                value={commonForm.fullName}
+                onChange={(e) => setCommonForm({ ...commonForm, fullName: e.target.value })}
+              />
+            </div>
+            <div>
+              <label htmlFor="commonForm-email" className="block text-sm font-semibold text-slate-700 mb-1">Email *</label>
+              <input id="commonForm-email"
+                type="email"
+                required
+                placeholder="you@example.com"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-corp-blue focus:outline-none"
+                value={commonForm.email}
+                onChange={(e) => setCommonForm({ ...commonForm, email: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="commonForm-mobile" className="block text-sm font-semibold text-slate-700 mb-1">Mobile Number *</label>
+              <input id="commonForm-mobile"
+                type="tel"
+                required
+                placeholder="10-digit mobile number"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-corp-blue focus:outline-none"
+                value={commonForm.mobile}
+                onChange={(e) => setCommonForm({ ...commonForm, mobile: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="commonForm-state" className="block text-sm font-semibold text-slate-700 mb-1">State</label>
+                <input id="commonForm-state"
+                  type="text"
+                  placeholder="State"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-corp-blue focus:outline-none"
+                  value={commonForm.state}
+                  onChange={(e) => setCommonForm({ ...commonForm, state: e.target.value })}
+                />
+              </div>
+              <div>
+                <label htmlFor="commonForm-city" className="block text-sm font-semibold text-slate-700 mb-1">City</label>
+                <input id="commonForm-city"
+                  type="text"
+                  placeholder="City"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-corp-blue focus:outline-none"
+                  value={commonForm.city}
+                  onChange={(e) => setCommonForm({ ...commonForm, city: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="commonForm-document" className="block text-sm font-semibold text-slate-700 mb-1">Upload Document</label>
+            <div className="flex flex-col gap-2 rounded-md border border-dashed border-slate-300 bg-white px-3 py-3 text-sm">
+              <div className="flex items-center gap-2 text-slate-600">
+                <Upload className="w-4 h-4 text-corp-blue" />
+                <span>Attach your ID, bonafide, UDYAM certificate, registration certificate, or approval letter</span>
+              </div>
+              <input id="commonForm-document"
+                type="file"
+                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-corp-blue file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setCommonForm({
+                    ...commonForm,
+                    documentFile: file,
+                    documentName: file?.name || ''
+                  });
+                }}
+              />
+              {commonForm.documentName && (
+                <span className="text-xs text-slate-500">Selected file: {commonForm.documentName}</span>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <label className="flex items-start gap-2 cursor-pointer text-xs leading-normal">
+              <input
+                type="checkbox"
+                required
+                className="rounded text-corp-blue focus:ring-corp-blue shrink-0 mt-0.5"
+                checked={commonForm.termsAccepted}
+                onChange={(e) => setCommonForm({ ...commonForm, termsAccepted: e.target.checked })}
+              />
+              <span className="text-slate-600 font-medium">
+                I agree to the terms and conditions and consent to the verification and review process for this registration.
+              </span>
+            </label>
+          </div>
         </div>
 
         {/* ------------------------------------------------------------- */}

@@ -35,19 +35,48 @@ export async function verifyEnquiryEmail(id: string, code: string) {
 }
 
 // --- Applications ---
-export async function insertApplication(app: { id: string; membershipNo: string; category: string; name: string; email: string; formData: unknown; submittedAt: string; verificationCode?: string; emailVerified?: string }) {
+export async function insertApplication(app: {
+  id: string;
+  membershipNo: string;
+  category: string;
+  name: string;
+  email: string;
+  phone?: string;
+  formData: unknown;
+  submittedAt: string;
+  verificationCode?: string;
+  emailVerified?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}) {
+  const createdAt = app.createdAt || app.submittedAt;
+  const updatedAt = app.updatedAt || app.submittedAt;
+
   const { error } = await supabase.from('applications').insert({
     id: app.id,
     membership_no: app.membershipNo,
     category: app.category,
     name: app.name,
     email: app.email,
+    phone: app.phone || null,
     form_data: app.formData,
     submitted_at: app.submittedAt,
     verification_code: app.verificationCode || null,
-    email_verified: app.emailVerified || 'false'
+    email_verified: app.emailVerified || 'false',
+    created_at: createdAt,
+    updated_at: updatedAt
   });
   if (error) throw error;
+}
+
+export function getApplicationByEmail(email: string) {
+  return supabase
+    .from('applications')
+    .select('*')
+    .eq('email', email.toLowerCase().trim())
+    .order('submitted_at', { ascending: false })
+    .limit(1)
+    .single();
 }
 
 export async function verifyApplicationEmail(id: string, code: string) {
@@ -68,12 +97,37 @@ export function getApplicationById(id: string) {
   return supabase.from('applications').select('*').eq('id', id).single();
 }
 
-export async function updateApplicationStatus(id: string, status: 'Pending' | 'Approved' | 'Rejected', approvalDate?: string) {
-  const payload: Record<string, string | null> = { status };
-  if (approvalDate) payload.approval_date = approvalDate;
-  payload.reviewed_at = new Date().toISOString();
-  const { data, error } = await supabase.from('applications').update(payload).eq('id', id).select('*').single();
-  if (error) throw error;
+export async function updateApplicationStatus(
+  id: string,
+  status: 'Pending' | 'Approved' | 'Rejected',
+  approvalDate?: string,
+  memberId?: string,
+  rejectionReason?: string
+) {
+  const basePayload: Record<string, string | null> = {
+    status,
+    reviewed_at: new Date().toISOString(),
+  };
+  if (approvalDate) basePayload.approval_date = approvalDate;
+
+  let { data, error } = await supabase.from('applications').update(basePayload).eq('id', id).select('*').single();
+
+  if (error && (memberId || rejectionReason)) {
+    const extraPayload: Record<string, string | null> = { ...basePayload };
+    if (memberId) extraPayload.member_id = memberId;
+    if (rejectionReason) extraPayload.rejection_reason = rejectionReason;
+    const retry = await supabase.from('applications').update(extraPayload).eq('id', id).select('*').single();
+    if (retry.error) {
+      const minimal = await supabase.from('applications').update(basePayload).eq('id', id).select('*').single();
+      if (minimal.error) throw minimal.error;
+      data = minimal.data;
+    } else {
+      data = retry.data;
+    }
+  } else if (error) {
+    throw error;
+  }
+
   return data;
 }
 
@@ -397,9 +451,10 @@ export async function createUser(user: {
   membershipPlan?: string | null;
   membershipStatus: string;
   permissions: string[];
+  membershipNo?: string;
 }): Promise<PublicUser> {
   const { hash, salt } = hashPassword(user.password);
-  const { data, error } = await supabase.from('users').insert({
+  const baseRecord: Record<string, any> = {
     id: user.id,
     name: user.name,
     email: user.email.toLowerCase().trim(),
@@ -410,8 +465,20 @@ export async function createUser(user: {
     membership_status: user.membershipStatus,
     permissions: user.permissions,
     created_at: new Date().toISOString()
-  }).select('*').single();
-  
+  };
+
+  if (user.membershipNo) {
+    const withMembership = { ...baseRecord, membership_no: user.membershipNo };
+    let { data, error } = await supabase.from('users').insert(withMembership).select('*').single();
+    if (error) {
+      const fallback = await supabase.from('users').insert(baseRecord).select('*').single();
+      if (fallback.error) throw fallback.error;
+      data = fallback.data;
+    }
+    return toPublicUser(data);
+  }
+
+  const { data, error } = await supabase.from('users').insert(baseRecord).select('*').single();
   if (error) throw error;
   return toPublicUser(data);
 }
@@ -508,13 +575,13 @@ export async function seedDevUser(): Promise<PublicUser> {
 }
 
 // --- Password helpers ---
-function hashPassword(password: string): { hash: string; salt: string } {
+export function hashPassword(password: string): { hash: string; salt: string } {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
   return { hash, salt };
 }
 
-function verifyPassword(password: string, hash: string, salt: string): boolean {
+export function verifyPassword(password: string, hash: string, salt: string): boolean {
   const candidate = crypto.scryptSync(password, salt, 64);
   const stored = Buffer.from(hash, 'hex');
   return candidate.length === stored.length && crypto.timingSafeEqual(candidate, stored);

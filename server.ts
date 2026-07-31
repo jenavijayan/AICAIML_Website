@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import multer from 'multer';
 import nodemailer from 'nodemailer';
 import { createServer as createViteServer } from 'vite';
@@ -15,11 +16,15 @@ import {
   getEvents, insertEvent, deleteEvent,
   getPartners, insertPartner, deletePartner,
   getTestimonials, insertTestimonial, deleteTestimonial,
-  updateApplicationStatus, createUser, verifyApplicationEmail,
+  updateApplicationStatus, createUser, verifyApplicationEmail, getApplicationByEmail,
   PublicUser
 } from './db';
+import { SUPABASE_ENABLED } from './lib/supabase';
 
 const SESSION_COOKIE = 'aicaiml_session';
+const entryFile = process.argv[1] ? path.resolve(process.argv[1]) : path.resolve('.');
+const __filename = entryFile;
+const __dirname = path.dirname(entryFile);
 
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -44,7 +49,6 @@ function clearSessionCookie(res: express.Response) {
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`);
 }
 
-const otpStore = new Map<string, { code: string; expiresAt: number }>();
 const verificationStore = new Map<string, { code: string; expiresAt: Date }>();
 const verifiedEmails = new Set<string>();
 
@@ -57,6 +61,23 @@ const mailTransporter = nodemailer.createTransport({
     pass: process.env.EMAIL_APP_PASSWORD
   }
 });
+
+async function verifyMailTransporter() {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_USER === 'your-email@gmail.com') {
+    console.warn('Email is disabled — EMAIL_USER / EMAIL_APP_PASSWORD in .env are still placeholders.');
+    return;
+  }
+  try {
+    await mailTransporter.verify();
+    console.log(`Email service verified — sending as ${process.env.EMAIL_USER}`);
+  } catch (err) {
+    console.error('Email service verification failed. Check .env credentials and Google Account security settings.');
+    console.error('If using Gmail, ensure 2-Step Verification is ON and the App Password is correct.');
+    console.error('You may also need to visit: https://accounts.google.com/DisplayUnlockCaptcha');
+    const anyErr = err as any;
+    console.error('SMTP error:', anyErr.code, anyErr.message);
+  }
+}
 
 async function sendEnquiryEmail(to: string, subject: string, text: string) {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_USER === 'your-email@gmail.com') {
@@ -97,7 +118,34 @@ async function requireAdmin(req: express.Request & { adminUser?: PublicUser }, r
   next();
 }
 
-const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+const cwdRoot = path.resolve(process.cwd());
+const moduleRoot = path.resolve(__dirname, '..');
+const candidateRoots = [cwdRoot, moduleRoot];
+
+let publicDir = '';
+let uploadsDir = '';
+
+for (const root of candidateRoots) {
+  const candidatePublic = path.join(root, 'public');
+  if (fs.existsSync(candidatePublic)) {
+    publicDir = candidatePublic;
+    uploadsDir = path.join(candidatePublic, 'uploads');
+    break;
+  }
+
+  const candidateDist = path.join(root, 'dist');
+  if (fs.existsSync(candidateDist)) {
+    publicDir = candidateDist;
+    uploadsDir = path.join(root, 'public', 'uploads');
+    break;
+  }
+}
+
+if (!publicDir) {
+  publicDir = path.join(cwdRoot, 'public');
+  uploadsDir = path.join(publicDir, 'uploads');
+}
+
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -119,16 +167,68 @@ const upload = multer({
   }
 });
 
+const documentUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadsDir),
+    filename: (req, file, cb) => {
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      cb(null, `${Date.now()}-${safeName}`);
+    }
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /^(application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|image\/(png|jpe?g|webp|gif|svg\+xml))$/;
+    if (!allowedTypes.test(file.mimetype)) {
+      return cb(new Error('Only PDF, DOC, DOCX, and image files are allowed.'));
+    }
+    cb(null, true);
+  }
+});
+
+async function findAvailablePort(startPort: number): Promise<number> {
+  const net = await import('net');
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.listen(startPort, '0.0.0.0', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : startPort;
+      server.close(() => resolve(port));
+    });
+    server.on('error', () => {
+      server.close();
+      resolve(findAvailablePort(startPort + 1));
+    });
+  });
+}
+
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const desiredPort = parseInt(process.env.PORT || '3000', 10);
+  const PORT = await findAvailablePort(desiredPort);
 
-  // JSON and URL-encoded parsers
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+    if (PORT !== desiredPort) {
+      console.warn(`Port ${desiredPort} was in use, fell back to ${PORT}`);
+    }
+  });
+
+  server.on('error', (err: any) => {
+    console.error('Server error:', err);
+    process.exit(1);
+  });
+
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Serve admin-uploaded images directly from disk (works in both dev and
-  // production — unlike dist/, this reflects files uploaded after build).
+  app.use((req, res, next) => {
+    if (req.body === undefined) req.body = {};
+    next();
+  });
+
+  // Serve static files from the public directory, including videos and
+  // uploaded media, in both dev and production.
+  app.use(express.static(publicDir));
   app.use('/uploads', express.static(uploadsDir));
 
   // API Route - Health Check
@@ -249,49 +349,6 @@ async function startServer() {
     res.json({ success: true, message: 'Password updated successfully.' });
   });
 
-  // API Route - Request email verification OTP
-  app.post('/api/verification/request', async (req, res) => {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ error: 'Email is required.' });
-    }
-    const normalizedEmail = email.trim().toLowerCase();
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    otpStore.set(normalizedEmail, { code, expiresAt: Date.now() + 10 * 60 * 1000 });
-
-    const subject = '[AICAIML] Email Verification Code';
-    const emailBody = `Your AICAIML email verification code is: ${code}\n\nThis code will expire in 10 minutes. If you did not request this, please ignore this email.`;
-
-    await sendEnquiryEmail(normalizedEmail, subject, emailBody);
-
-    res.json({ success: true, message: 'Verification code sent to your email.' });
-  });
-
-  // API Route - Confirm email verification OTP
-  app.post('/api/verification/confirm', async (req, res) => {
-    const { email, code } = req.body;
-    if (!email || !code) {
-      return res.status(400).json({ error: 'Email and verification code are required.' });
-    }
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedCode = String(code).trim();
-
-    if (normalizedCode === '123456' || normalizedCode === '000000') {
-      return res.json({ success: true, message: 'Email verified successfully.' });
-    }
-
-    const stored = otpStore.get(normalizedEmail);
-    if (!stored || stored.expiresAt < Date.now()) {
-      return res.status(400).json({ error: 'Verification code expired or not found. Please request a new code.' });
-    }
-    if (stored.code !== normalizedCode) {
-      return res.status(400).json({ error: 'Invalid verification code.' });
-    }
-
-    otpStore.delete(normalizedEmail);
-    res.json({ success: true, message: 'Email verified successfully.' });
-  });
-
   // --- Admin-only routes ---
 
   app.get('/api/admin/overview', requireAdmin, async (req, res) => {
@@ -339,14 +396,36 @@ async function startServer() {
       }
 
       const approvalDate = new Date().toISOString();
-      const updated = await updateApplicationStatus(application.id, 'Approved', approvalDate);
 
       const formData = application.form_data || {};
       const name = formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName || 'Applicant';
       const email = (formData.emailId || formData.email || 'applicant@aic-aiml.org').trim().toLowerCase();
 
+      let memberId: string | null = null;
+      let generatedPassword: string | null = null;
+
+      const existingUser = await getUserByEmail(email);
+      if (!existingUser) {
+        memberId = 'mem-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+        generatedPassword = crypto.randomBytes(10).toString('base64url').substring(0, 16);
+
+        await createUser({
+          id: memberId,
+          name,
+          email,
+          password: generatedPassword,
+          role: 'member',
+          membershipPlan: null,
+          membershipStatus: 'active',
+          permissions: [],
+          membershipNo: application.membership_no
+        });
+      }
+
+      const updated = await updateApplicationStatus(application.id, 'Approved', approvalDate, memberId || undefined);
+
       const subject = `[AICAIML] Membership Application Approved - ${application.membership_no}`;
-      const emailBody = `Dear ${name},
+      let emailBody = `Dear ${name},
 
 Congratulations! Your application for AICAIML ${application.category.toUpperCase()} membership has been reviewed and approved by the Membership Board.
 
@@ -357,9 +436,31 @@ APPROVAL DETAILS:
 - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}
 
 NEXT STEPS:
-1. Your digital membership certificate and secure member portal login credentials will be issued shortly to this email address.
-2. Please use your Membership ID for all future correspondence with the Council.
-3. Access to member-only courses, events, and chapter activities will be enabled upon first login.
+1. Please use your Membership ID for all future correspondence with the Council.
+2. Access to member-only courses, events, and chapter activities will be enabled upon first login.`;
+
+      if (memberId && generatedPassword) {
+        emailBody += `
+
+SECURE MEMBER PORTAL CREDENTIALS:
+- Member ID / Username: ${memberId}
+- Password: ${generatedPassword}
+
+You can sign in at: ${process.env.BASE_URL || 'https://www.aic-aiml.org'}/#login
+
+Please keep these credentials secure and do not share them with anyone.
+You may change your password after your first login.`;
+      } else if (existingUser) {
+        emailBody += `
+
+1. Your existing member portal account (linked to this email) is now active. You can sign in at: ${process.env.BASE_URL || 'https://www.aic-aiml.org'}/#login`;
+      } else {
+        emailBody += `
+
+1. Your digital membership certificate and secure member portal login credentials will be issued shortly to this email address.`;
+      }
+
+      emailBody += `
 
 Welcome to India's premier AI/ML advancements ecosystem!
 
@@ -369,7 +470,11 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
 
       await sendEnquiryEmail(email, subject, emailBody);
 
-      res.json({ success: true, application: updated });
+      res.json({
+        success: true,
+        application: updated,
+        credentials: memberId && generatedPassword ? { memberId, password: generatedPassword } : null
+      });
     } catch (err: any) {
       console.error('Approve application error:', err);
       res.status(500).json({ error: err.message || 'Failed to approve application.' });
@@ -379,12 +484,36 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
   app.post('/api/admin/applications/:id/reject', requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
+      const { reason } = req.body;
       const { data: application, error: fetchError } = await getApplicationById(id);
       if (fetchError || !application) {
         return res.status(404).json({ error: 'Application not found.' });
       }
 
-      const updated = await updateApplicationStatus(application.id, 'Rejected');
+      const rejectionDate = new Date().toISOString();
+      const updated = await updateApplicationStatus(application.id, 'Rejected', undefined, undefined, reason || undefined);
+
+      const formData = application.form_data || {};
+      const name = formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName || 'Applicant';
+      const email = (formData.emailId || formData.email || 'applicant@aic-aiml.org').trim().toLowerCase();
+
+      const subject = `[AICAIML] Membership Application Update - ${application.membership_no}`;
+      const emailBody = `Dear ${name},
+
+Thank you for your interest in AICAIML ${application.category.toUpperCase()} membership.
+
+After careful review by the Membership Board, we regret to inform you that your application (Ref: ${application.id}) has been marked as Rejected.
+
+${reason ? `REJECTION REASON:\n${reason}\n\n` : ''}If you believe this decision was made in error, or if you would like to address the concerns noted above, please contact our Membership Office at support@aic-aiml.org with your application reference number.
+
+You may also choose to resubmit a new application after addressing the feedback provided.
+
+Sincerely,
+Membership Board,
+All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
+
+      await sendEnquiryEmail(email, subject, emailBody);
+
       res.json({ success: true, application: updated });
     } catch (err: any) {
       console.error('Reject application error:', err);
@@ -404,7 +533,19 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
 
   app.get('/api/admin/users', requireAdmin, async (req, res) => {
     const { data } = await getAllUsers();
-    res.json(data || []);
+    const safe = (data || []).map((u: any) => {
+      const { password_hash, password_salt, ...rest } = u;
+      let permissions = rest.permissions;
+      if (typeof permissions === 'string') {
+        try { permissions = JSON.parse(permissions); } catch { permissions = []; }
+      }
+      return {
+        ...rest,
+        permissions: Array.isArray(permissions) ? permissions : [],
+        membership_no: rest.membership_no || null
+      };
+    });
+    res.json(safe);
   });
 
   app.post('/api/admin/users', requireAdmin, async (req, res) => {
@@ -494,9 +635,99 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
     };
     await insertCourse(course);
     res.json({ success: true, course });
-  });
+   });
 
-  app.delete('/api/admin/courses/:id', requireAdmin, async (req, res) => {
+   // API Route - Generate unique member credentials and email them automatically
+   app.post('/api/admin/members/credentials', requireAdmin, async (req, res) => {
+     try {
+       const { name, email, role } = req.body;
+       if (!name || !email) {
+         return res.status(400).json({ error: 'Name and email are required.' });
+       }
+       const emailLower = String(email).trim().toLowerCase();
+       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLower)) {
+         return res.status(400).json({ error: 'Invalid email format.' });
+       }
+
+       const existing = await getUserByEmail(emailLower);
+       if (existing) {
+         return res.status(409).json({ error: 'A user with this email already exists.' });
+       }
+
+       const memberId = 'mem-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+       const password = crypto.randomBytes(10).toString('base64url').substring(0, 16);
+
+       const userRole = role === 'admin' ? 'admin' : 'member';
+       const permissions =
+         userRole === 'admin'
+           ? [
+               'access_premium_courses',
+               'access_course_videos',
+               'access_downloadable_resources',
+               'access_quizzes',
+               'access_certificates',
+               'access_members_only_pages'
+             ]
+           : [];
+
+       const user = await createUser({
+         id: memberId,
+         name,
+         email: emailLower,
+         password,
+         role: userRole,
+         membershipPlan: null,
+         membershipStatus: 'inactive',
+         permissions
+       });
+
+       const baseUrl = process.env.BASE_URL || 'https://www.aic-aiml.org';
+       const subject = '[AICAIML] Your Member Portal Credentials';
+       const emailBody = `Dear ${name},
+
+Your AICAIML member portal account has been created.
+
+MEMBER CREDENTIALS:
+- Member ID / Username: ${memberId}
+- Password: ${password}
+
+You can sign in at: ${baseUrl}/#login
+
+Your account is registered with the email address: ${emailLower}
+Role: ${userRole === 'admin' ? 'Administrator' : 'Member'}
+
+Please keep these credentials secure and do not share them with anyone.
+You may change your password after your first login.
+
+If you did not expect this email, please contact support@aic-aiml.org.
+
+Sincerely,
+Membership & Accounts Team,
+All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
+
+       const { sent } = await sendEnquiryEmail(emailLower, subject, emailBody);
+
+       res.json({
+         success: true,
+         member: {
+           id: user.id,
+           name: user.name,
+           email: user.email,
+           role: user.role
+         },
+         credentials: {
+           memberId,
+           password
+         },
+         emailSent: sent
+       });
+     } catch (err: any) {
+       console.error('Generate credentials error:', err);
+       res.status(500).json({ error: err.message || 'Failed to generate credentials.' });
+     }
+   });
+
+   app.delete('/api/admin/courses/:id', requireAdmin, async (req, res) => {
     await deleteCourse(req.params.id);
     res.json({ success: true });
   });
@@ -733,32 +964,78 @@ AICAIML Council`;
   });
 
   // API Route - Membership Form Submission with Honeypot Anti-Spam Check
-  app.post('/api/membership/submit', async (req, res) => {
-    const { category, formData, honeypot } = req.body;
+  app.post('/api/membership/submit', documentUpload.single('document'), async (req, res) => {
+    const { category, honeypot } = req.body;
+    let formData = req.body.formData;
 
     if (honeypot && honeypot.trim() !== '') {
       console.warn('Spam submission detected on membership form.');
       return res.status(400).json({ error: 'Spam validation failed.' });
     }
 
+    if (typeof formData === 'string') {
+      try {
+        formData = JSON.parse(formData);
+      } catch {
+        return res.status(400).json({ error: 'Invalid form data payload.' });
+      }
+    }
+
     if (!category || !formData) {
       return res.status(400).json({ error: 'Category and form data are required.' });
     }
 
-    const rawEmail = (formData && (formData.emailId || formData.email)) || '';
+    const uploadedFile = req.file;
+    if (uploadedFile) {
+      const relativePath = `/uploads/${path.basename(uploadedFile.filename)}`;
+      formData = {
+        ...formData,
+        documentUrl: relativePath,
+        documentName: formData.documentName || uploadedFile.originalname
+      };
+    }
+
+    const rawEmail = (formData && (formData.email || formData.emailId || formData.contactEmail)) || '';
     const email = String(rawEmail).trim().toLowerCase();
     if (!email || !verifiedEmails.has(email)) {
       return res.status(403).json({ error: 'Email verification required. Please verify your email before submitting.' });
+    }
+
+    const existingUser = await getUserByEmail(email);
+    if (existingUser) {
+      return res.status(409).json({ error: 'An account with this email address already exists. If you have forgotten your credentials, please contact support@aic-aiml.org.' });
+    }
+
+    const existingApp = await getApplicationByEmail(email);
+    if (existingApp && existingApp.data) {
+      return res.status(409).json({
+        error: `An application with this email address has already been submitted (Ref: ${existingApp.data.id}, Status: ${existingApp.data.status}). Each member is allowed only one application per email address.`,
+        existingApplicationId: existingApp.data.id,
+        existingStatus: existingApp.data.status
+      });
     }
 
     const membershipNo = 'AIC-' + category.substring(0, 3).toUpperCase() + '-' + Math.floor(100000 + Math.random() * 900000);
     const applicationId = 'APP-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
     const submittedAt = new Date().toISOString();
-    const name = (formData && (formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName)) || 'Applicant';
+    const name = (formData && (formData.fullName || formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName)) || 'Applicant';
+    const phone = String(formData.phone || formData.mobile || formData.mobileNo || '').trim() || undefined;
     const verificationCode = String(Math.floor(100000 + Math.random() * 900000));
 
-    await insertApplication({ id: applicationId, membershipNo, category, name, email, formData: formData || {}, submittedAt, verificationCode });
+    await insertApplication({
+      id: applicationId,
+      membershipNo,
+      category,
+      name,
+      email,
+      phone,
+      formData: formData || {},
+      submittedAt,
+      verificationCode,
+      createdAt: submittedAt,
+      updatedAt: submittedAt
+    });
 
     const subject = `[AICAIML] Membership Application Submitted - No: ${membershipNo}`;
     const emailBody = `Dear ${name},
@@ -1007,13 +1284,16 @@ Membership & Treasury Desk, AICAIML Council`;
   // non-production so a known test password never ends up on a live deploy
   // unless explicitly opted into via SEED_DEV_USER=true.
   if (process.env.NODE_ENV !== 'production' || process.env.SEED_DEV_USER === 'true') {
-    await seedDevUser();
-    console.log('Dev account ready: developer@aicaiml.org (role: admin, plan: Premium)');
+    if (SUPABASE_ENABLED) {
+      await seedDevUser();
+      console.log('Dev account ready: developer@aicaiml.org (role: admin, plan: Premium)');
+    } else {
+      console.warn('Supabase is not configured. Skipping dev seed and admin user creation.');
+    }
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
+  await verifyMailTransporter();
+
 }
 
 startServer().catch((err) => {
