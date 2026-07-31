@@ -67,7 +67,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
       if (!res.ok) {
-        return { success: false, error: data.error || 'Login failed.' };
+        const message = data?.error || data?.message || `Login failed (${res.status}).`;
+        return { success: false, error: message };
       }
       setUser(data.user);
       return { success: true };
