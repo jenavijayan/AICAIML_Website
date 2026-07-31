@@ -1,6 +1,56 @@
-import { supabase } from './lib/supabase';
+import { supabase, SUPABASE_ENABLED } from './lib/supabase';
 import { initialNews, initialCourses, initialProjects, initialEvents, initialPartners, initialTestimonials } from './src/cmsData';
 import crypto from 'crypto';
+
+const FALLBACK_AUTH_EMAIL = (process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || 'developer@aicaiml.org').trim().toLowerCase();
+const FALLBACK_AUTH_PASSWORD = (process.env.ADMIN_PASSWORD || 'Test@123456').trim();
+const FALLBACK_AUTH_SECRET = process.env.AUTH_SESSION_SECRET || 'aicaiml-dev-session-secret';
+const FALLBACK_USER_ID = 'user-dev-001';
+
+function getFallbackUser(email?: string, password?: string, id?: string): PublicUser | null {
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  if (id && id !== FALLBACK_USER_ID) return null;
+  if (!normalizedEmail && !password && !id) return null;
+  if (normalizedEmail && normalizedEmail !== FALLBACK_AUTH_EMAIL) return null;
+  if (password && password !== FALLBACK_AUTH_PASSWORD) return null;
+  return {
+    id: FALLBACK_USER_ID,
+    name: 'Developer',
+    email: FALLBACK_AUTH_EMAIL,
+    role: 'admin',
+    membershipPlan: 'Premium',
+    membershipStatus: 'active',
+    permissions: [
+      'access_premium_courses',
+      'access_course_videos',
+      'access_downloadable_resources',
+      'access_quizzes'
+    ]
+  };
+}
+
+function createSignedSessionToken(user: PublicUser): string {
+  const payload = JSON.stringify({ user, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() });
+  const encoded = Buffer.from(payload, 'utf8').toString('base64url');
+  const signature = crypto.createHmac('sha256', FALLBACK_AUTH_SECRET).update(encoded).digest('hex');
+  return `${encoded}.${signature}`;
+}
+
+function verifySignedSessionToken(token: string): PublicUser | null {
+  if (!token) return null;
+  const [encoded, signature] = token.split('.');
+  if (!encoded || !signature) return null;
+  const expected = crypto.createHmac('sha256', FALLBACK_AUTH_SECRET).update(encoded).digest('hex');
+  if (expected !== signature) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as { user?: PublicUser; expiresAt?: string };
+    if (!payload.user) return null;
+    if (payload.expiresAt && new Date(payload.expiresAt) < new Date()) return null;
+    return payload.user;
+  } catch {
+    return null;
+  }
+}
 
 // Supabase-backed data access layer. All functions return Promises, so
 // callers in server.ts must await them.
@@ -490,6 +540,10 @@ export async function getUserByEmail(email: string): Promise<PublicUser | undefi
 }
 
 export async function verifyCredentials(email: string, password: string): Promise<PublicUser | null> {
+  if (!SUPABASE_ENABLED) {
+    return getFallbackUser(email, password) || null;
+  }
+
   const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase().trim()).single();
   if (error || !data) return null;
   if (!verifyPassword(password, data.password_hash, data.password_salt)) return null;
@@ -510,6 +564,13 @@ export async function updateUserPassword(email: string, currentPassword: string,
 
 // --- Sessions ---
 export async function createSession(userId: string): Promise<{ token: string; expiresAt: string }> {
+  if (!SUPABASE_ENABLED) {
+    const fallbackUser = getFallbackUser(undefined, undefined, userId);
+    if (!fallbackUser) throw new Error('Unable to create a fallback session for the supplied user.');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    return { token: createSignedSessionToken(fallbackUser), expiresAt: expiresAt.toISOString() };
+  }
+
   const token = crypto.randomBytes(32).toString('hex');
   const createdAt = new Date();
   const expiresAt = new Date(createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -525,6 +586,11 @@ export async function createSession(userId: string): Promise<{ token: string; ex
 
 export async function getSessionUser(token: string): Promise<PublicUser | null> {
   if (!token) return null;
+
+  if (!SUPABASE_ENABLED) {
+    return verifySignedSessionToken(token);
+  }
+
   const { data: session, error: sessionError } = await supabase.from('sessions').select('*').eq('token', token).single();
   if (sessionError || !session) return null;
   
@@ -539,6 +605,7 @@ export async function getSessionUser(token: string): Promise<PublicUser | null> 
 }
 
 export async function deleteSession(token: string) {
+  if (!SUPABASE_ENABLED) return;
   const { error } = await supabase.from('sessions').delete().eq('token', token);
   if (error) console.error('Failed to delete session:', error);
 }

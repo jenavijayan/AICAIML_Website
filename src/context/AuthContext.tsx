@@ -28,8 +28,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const res = await fetch('/api/auth/me', { credentials: 'include' });
       if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
+        const text = await res.text();
+        if (!text) {
+          setUser(null);
+        } else {
+          const data = JSON.parse(text);
+          setUser(data.user);
+        }
       } else {
         setUser(null);
       }
@@ -52,7 +57,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         credentials: 'include',
         body: JSON.stringify({ email, password })
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = {};
+        }
+      }
       if (!res.ok) {
         return { success: false, error: data.error || 'Login failed.' };
       }
