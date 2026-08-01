@@ -34,7 +34,11 @@ export default function Home({
 
   useEffect(() => {
     fetch('/api/news')
-      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        return text ? JSON.parse(text) : null;
+      })
       .then((data: NewsUpdate[]) => {
         if (Array.isArray(data) && data.length > 0) setNewsList(data);
       })
@@ -43,7 +47,11 @@ export default function Home({
 
   useEffect(() => {
     fetch('/api/projects')
-      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        return text ? JSON.parse(text) : null;
+      })
       .then((data: Project[]) => {
         if (Array.isArray(data) && data.length > 0) setProjectsList(data);
       })
@@ -52,7 +60,11 @@ export default function Home({
 
   useEffect(() => {
     fetch('/api/events')
-      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        return text ? JSON.parse(text) : null;
+      })
       .then((data: UpcomingEvent[]) => {
         if (Array.isArray(data) && data.length > 0) setEventsList(data);
       })
@@ -61,7 +73,11 @@ export default function Home({
 
   useEffect(() => {
     fetch('/api/testimonials')
-      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        return text ? JSON.parse(text) : null;
+      })
       .then((data: Testimonial[]) => {
         if (Array.isArray(data) && data.length > 0) setTestimonialsList(data);
       })
@@ -70,7 +86,11 @@ export default function Home({
 
   useEffect(() => {
     fetch('/api/partners')
-      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        return text ? JSON.parse(text) : null;
+      })
       .then((data: Partner[]) => {
         if (Array.isArray(data) && data.length > 0) setPartnersList(data);
       })

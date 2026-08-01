@@ -23,7 +23,11 @@ export default function Courses({ setCurrentPage, onSelectCourse }: CoursesProps
 
   useEffect(() => {
     fetch('/api/courses')
-      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        return text ? JSON.parse(text) : null;
+      })
       .then((data: Course[]) => {
         if (Array.isArray(data) && data.length > 0) {
           setCourses(data);

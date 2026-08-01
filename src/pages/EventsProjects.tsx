@@ -23,7 +23,11 @@ export default function EventsProjects({ onOpenRegisterEventModal }: EventsProje
 
   useEffect(() => {
     fetch('/api/projects')
-      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        return text ? JSON.parse(text) : null;
+      })
       .then((data: Project[]) => {
         if (Array.isArray(data) && data.length > 0) setProjectsList(data);
       })
@@ -32,7 +36,11 @@ export default function EventsProjects({ onOpenRegisterEventModal }: EventsProje
 
   useEffect(() => {
     fetch('/api/events')
-      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        return text ? JSON.parse(text) : null;
+      })
       .then((data: UpcomingEvent[]) => {
         if (Array.isArray(data) && data.length > 0) setEventsList(data);
       })
