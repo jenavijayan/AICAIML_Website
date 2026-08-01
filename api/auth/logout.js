@@ -1,6 +1,11 @@
-const { SESSION_COOKIE } = require('../_lib/authFallback');
+const { SESSION_COOKIE, parseCookies, deleteSupabaseSession } = require('../_lib/authFallback');
 
 module.exports = async function handler(req, res) {
+  const cookies = parseCookies(req.headers.cookie || '');
+  const token = cookies[SESSION_COOKIE];
+  if (token) {
+    await deleteSupabaseSession(token);
+  }
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`);
   return res.status(200).json({ success: true });
 };

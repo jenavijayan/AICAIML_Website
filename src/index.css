@@ -241,6 +241,15 @@ textarea:focus-visible,
   animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-in forwards;
+}
+
 /* Certificate-only printing: hide the entire page except the certificate
    itself when the user prints (e.g. "Print / Save Certificate as PDF"). */
 @media print {

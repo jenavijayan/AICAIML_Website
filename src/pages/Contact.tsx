@@ -7,6 +7,8 @@ import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import { useFormVerification } from '../hooks/useFormVerification';
 import EmailVerification from '../components/EmailVerification';
 
+const EXEMPT_ADMIN_EMAIL = 'anuyaparamasivan@gmail.com';
+
 export default function Contact() {
   useDocumentMeta('Contact', 'Reach the AICAIML Executive Secretariat for course support, institutional registrations, or general enquiries.');
   const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' });
@@ -62,7 +64,8 @@ export default function Contact() {
       setError('Please provide your email address.');
       return;
     }
-    if (verificationStep === 'verified') {
+    const isExempt = form.email.trim().toLowerCase() === EXEMPT_ADMIN_EMAIL;
+    if (isExempt || verificationStep === 'verified') {
       await submitVerifiedForm();
       return;
     }
@@ -283,7 +286,7 @@ export default function Contact() {
                       loading={loading}
                       className="w-full justify-center"
                       onClick={handleSubmit}
-                      disabled={verificationStep !== 'idle' && verificationStep !== 'verified'}
+                      disabled={verificationStep !== 'idle' && verificationStep !== 'verified' && form.email.trim().toLowerCase() !== EXEMPT_ADMIN_EMAIL}
                     >
                       {loading ? 'Submitting...' : 'Submit Query'}
                     </Button>

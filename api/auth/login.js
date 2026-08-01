@@ -1,4 +1,11 @@
-const { SESSION_COOKIE, getFallbackUser, createSignedSessionToken, parseJsonBody } = require('../_lib/authFallback');
+const {
+  SESSION_COOKIE,
+  getFallbackUser,
+  getSupabaseUser,
+  createSupabaseSession,
+  seedDevUser,
+  parseJsonBody
+} = require('../_lib/authFallback');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -14,16 +21,19 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
 
-    const user = getFallbackUser(email, password);
+    let user = await getSupabaseUser(email, password);
+    if (!user) {
+      user = getFallbackUser(email, password);
+    }
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    const token = createSignedSessionToken(user);
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; HttpOnly; Path=/; Expires=${expiresAt.toUTCString()}; SameSite=Lax`);
+    const { token, expiresAt } = await createSupabaseSession(user.id);
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; HttpOnly; Path=/; Expires=${expiresAt}; SameSite=Lax`);
     return res.status(200).json({ success: true, user });
   } catch (error) {
+    console.error('Login error:', error);
     return res.status(500).json({ error: 'Unable to process login request.' });
   }
 };

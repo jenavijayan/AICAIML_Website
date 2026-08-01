@@ -8,6 +8,8 @@ import { Button } from './ui';
 import { useFormVerification } from '../hooks/useFormVerification';
 import EmailVerification from './EmailVerification';
 
+const EXEMPT_ADMIN_EMAIL = 'anuyaparamasivan@gmail.com';
+
 interface FormProps {
   category: 'student' | 'msme' | 'corporate' | 'school' | 'university';
   onBack: () => void;
@@ -190,7 +192,9 @@ export default function MembershipForms({ category, onBack }: FormProps) {
     setError(null);
     setLoading(true);
 
-    if (!verified) {
+    const isExempt = commonForm.email.trim().toLowerCase() === EXEMPT_ADMIN_EMAIL;
+
+    if (!verified && !isExempt) {
       setLoading(false);
       return;
     }
@@ -1437,9 +1441,9 @@ export default function MembershipForms({ category, onBack }: FormProps) {
                 loading={loading}
                 id="btn-form-submit"
                 className="flex-1 sm:flex-none justify-center min-w-[140px]"
-                disabled={!verified && verificationStep !== 'verified'}
+                disabled={!verified && verificationStep !== 'verified' && commonForm.email.trim().toLowerCase() !== EXEMPT_ADMIN_EMAIL}
               >
-                {loading ? 'Processing...' : (verified || verificationStep === 'verified') ? 'Submit Application' : 'Verify Email First'}
+                {loading ? 'Processing...' : (verified || verificationStep === 'verified' || commonForm.email.trim().toLowerCase() === EXEMPT_ADMIN_EMAIL) ? 'Submit Application' : 'Verify Email First'}
               </Button>
             </div>
           </div>

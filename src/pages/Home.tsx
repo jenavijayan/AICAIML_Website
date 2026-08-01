@@ -79,19 +79,23 @@ export default function Home({
 
   // Testimonial Carousel Index
   const [testimonialIndex, setTestimonialIndex] = useState(0);
-
-  const heroImages = [
-    resolveAssetUrl('/images/hero-poster.jpg'),
-    resolveAssetUrl('/images/hero-poster.jpg')
+  
+  const heroAssets = [
+    { type: 'video' as const, src: resolveAssetUrl('/videos/IMAGE3.mp4'), poster: resolveAssetUrl('/images/IMAGE1.jpg') },
+    { type: 'image' as const, src: resolveAssetUrl('/images/IMAGE1.jpg') },
+    { type: 'image' as const, src: resolveAssetUrl('/images/IMAGE2.jpg') },
+    { type: 'image' as const, src: resolveAssetUrl('/images/hero-poster.jpg') },
   ];
   const [heroBgIndex, setHeroBgIndex] = useState(0);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setHeroBgIndex((prev) => (prev + 1) % heroImages.length);
+      setHeroBgIndex((prev) => (prev + 1) % heroAssets.length);
     }, 5000);
     return () => clearInterval(timer);
-  }, [heroImages.length]);
+  }, []);
+
+  const heroCurrentAsset = heroAssets[heroBgIndex];
 
   const handleNextTestimonial = () => {
     setTestimonialIndex((prev) => (prev + 1) % testimonialsList.length);
@@ -122,18 +126,32 @@ export default function Home({
 
       {/* SECTION 1: HERO BANNER */}
       <section className="relative bg-navy text-white overflow-hidden min-h-[640px] flex items-center py-20">
-        {/* Rotating hero background images */}
-        {heroImages.map((src, idx) => (
-          <img
-            key={src}
-            src={src}
-            alt=""
-            aria-hidden="true"
-            loading={idx === 0 ? 'eager' : 'lazy'}
-            className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-1000 ${idx === heroBgIndex ? 'opacity-100' : 'opacity-0'
-              }`}
-          />
-        ))}
+        {/* Rotating background: cycles through videos and images */}
+        <div className="absolute inset-0 w-full h-full overflow-hidden">
+          {heroCurrentAsset.type === 'video' ? (
+            <video
+              key={heroBgIndex}
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+              poster={heroCurrentAsset.poster}
+              className="absolute inset-0 w-full h-full object-cover animate-fadeIn"
+            >
+              <source src={heroCurrentAsset.src} type="video/mp4" />
+              <img src={heroCurrentAsset.poster} alt="" aria-hidden="true" />
+            </video>
+          ) : (
+            <img
+              key={heroBgIndex}
+              src={heroCurrentAsset.src}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover animate-fadeIn"
+            />
+          )}
+        </div>
         {/* Dark overlay for text readability */}
         <div className="absolute inset-0 z-[1]" style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}></div>
 
