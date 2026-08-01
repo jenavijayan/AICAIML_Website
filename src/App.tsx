@@ -13,27 +13,23 @@ import MembershipPlans from './components/MembershipPlans';
 import { Button, IconButton, Dialog, DialogHeader, TextField } from './components/ui';
 import EmailVerification from './components/EmailVerification';
 
-import Home from './pages/Home';
-import KnowAICAIML from './pages/KnowAICAIML';
-import Courses from './pages/Courses';
-import Verification from './pages/Verification';
-import Contact from './pages/Contact';
-import Learners from './pages/Learners';
-import EventsProjects from './pages/EventsProjects';
-import Benefits from './pages/Benefits';
-import Login from './pages/Login';
-import Legal from './pages/Legal';
-
 import { UpcomingEvent } from './cmsData';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useFormVerification } from './hooks/useFormVerification';
 
-// Code-split — these are the heaviest, least-often-visited routes
-// (a rich-content course reader, a 1000+-line multi-form component, and an
-// admin-only dashboard) so the homepage's initial bundle doesn't carry them.
+import Home from './pages/Home';
+const KnowAICAIML = lazy(() => import('./pages/KnowAICAIML'));
+const Verification = lazy(() => import('./pages/Verification'));
+const Contact = lazy(() => import('./pages/Contact'));
+const Courses = lazy(() => import('./pages/Courses'));
 const CourseDetail = lazy(() => import('./pages/CourseDetail'));
-const MembershipForms = lazy(() => import('./components/MembershipForms'));
+const Learners = lazy(() => import('./pages/Learners'));
+const EventsProjects = lazy(() => import('./pages/EventsProjects'));
+const Benefits = lazy(() => import('./pages/Benefits'));
+const Login = lazy(() => import('./pages/Login'));
+const Legal = lazy(() => import('./pages/Legal'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const MembershipForms = lazy(() => import('./components/MembershipForms'));
 
 function RouteFallback() {
   return (
@@ -243,21 +239,35 @@ function AppShell() {
               />
             )}
 
-            {currentPage === 'know-aicaiml' && <KnowAICAIML />}
+            {currentPage === 'know-aicaiml' && (
+              <Suspense fallback={<RouteFallback />}>
+                <KnowAICAIML />
+              </Suspense>
+            )}
 
-            {currentPage === 'verification' && <Verification />}
+            {currentPage === 'verification' && (
+              <Suspense fallback={<RouteFallback />}>
+                <Verification />
+              </Suspense>
+            )}
 
-            {currentPage === 'contact' && <Contact />}
+            {currentPage === 'contact' && (
+              <Suspense fallback={<RouteFallback />}>
+                <Contact />
+              </Suspense>
+            )}
 
             {currentPage === 'courses' && (
-              <Courses
-                setCurrentPage={setCurrentPage}
-                onSelectCourse={(courseId) => {
-                  setSelectedCourseId(courseId);
-                  setCurrentPage('course-detail');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-              />
+              <Suspense fallback={<RouteFallback />}>
+                <Courses
+                  setCurrentPage={setCurrentPage}
+                  onSelectCourse={(courseId) => {
+                    setSelectedCourseId(courseId);
+                    setCurrentPage('course-detail');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                />
+              </Suspense>
             )}
 
             {currentPage === 'course-detail' && selectedCourseId && (
@@ -273,16 +283,22 @@ function AppShell() {
               </Suspense>
             )}
 
-            {currentPage === 'learners' && <Learners />}
+            {currentPage === 'learners' && (
+              <Suspense fallback={<RouteFallback />}>
+                <Learners />
+              </Suspense>
+            )}
 
             {currentPage === 'events-projects' && (
-              <EventsProjects 
-                onOpenRegisterEventModal={(event) => {
-                  setRegSuccess(null);
-                  setRegError(null);
-                  setActiveRegEvent(event);
-                }}
-              />
+              <Suspense fallback={<RouteFallback />}>
+                <EventsProjects 
+                  onOpenRegisterEventModal={(event) => {
+                    setRegSuccess(null);
+                    setRegError(null);
+                    setActiveRegEvent(event);
+                  }}
+                />
+              </Suspense>
             )}
 
             {currentPage === 'membership' && (
@@ -386,13 +402,19 @@ function AppShell() {
             )}
 
             {currentPage === 'benefits-view' && (
-              <Benefits onJoinClick={(cat) => {
-                setSelectedCategory(cat);
-                setCurrentPage('membership');
-              }} />
+              <Suspense fallback={<RouteFallback />}>
+                <Benefits onJoinClick={(cat) => {
+                  setSelectedCategory(cat);
+                  setCurrentPage('membership');
+                }} />
+              </Suspense>
             )}
 
-            {currentPage === 'login' && <Login setCurrentPage={setCurrentPage} />}
+            {currentPage === 'login' && (
+              <Suspense fallback={<RouteFallback />}>
+                <Login setCurrentPage={setCurrentPage} />
+              </Suspense>
+            )}
 
              {currentPage === 'admin' && user?.role === 'admin' && (
                <Suspense fallback={<RouteFallback />}>
@@ -400,8 +422,16 @@ function AppShell() {
                </Suspense>
               )}
 
-             {currentPage === 'privacy' && <Legal initialSection="privacy" />}
-            {currentPage === 'terms' && <Legal initialSection="terms" />}
+             {currentPage === 'privacy' && (
+               <Suspense fallback={<RouteFallback />}>
+                 <Legal initialSection="privacy" />
+               </Suspense>
+              )}
+             {currentPage === 'terms' && (
+               <Suspense fallback={<RouteFallback />}>
+                 <Legal initialSection="terms" />
+               </Suspense>
+              )}
           </motion.div>
         </AnimatePresence>
       </main>
