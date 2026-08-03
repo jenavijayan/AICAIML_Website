@@ -21,104 +21,87 @@ import certificatesIssueHandler from '../server-lib/api-routes/certificates/issu
 import adminUploadHandler from '../server-lib/api-routes/admin/upload.js';
 import adminHandler from '../server-lib/api-routes/admin/[[...path]].js';
 
-function getPath(req) {
-  let path = req.url || '';
-  if (path.includes('?')) path = path.split('?')[0];
-  path = path.replace(/\/+$/, '');
-
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    try {
-      path = new URL(path).pathname;
-    } catch {
-      // ignore
-    }
-  }
-
-  return path;
+function getPathFromQuery(req) {
+  const segments = Array.isArray(req.query.path) ? req.query.path : [];
+  return '/' + segments.join('/');
 }
 
 export default async function handler(req, res) {
   const method = req.method || 'GET';
-  const path = getPath(req);
+  const path = getPathFromQuery(req);
 
-  if (method === 'GET' && (path === '/api/health' || path === '/health')) {
+  if (method === 'GET' && (path === '/health' || path === '/api/health')) {
     return healthHandler(req, res);
   }
 
-  if (method === 'POST' && (path === '/api/auth/login' || path === '/auth/login' || path.endsWith('/auth/login'))) {
+  if (method === 'POST' && (path === '/auth/login' || path === '/api/auth/login')) {
     return authLoginHandler(req, res);
   }
-  if (method === 'POST' && (path === '/api/auth/logout' || path === '/auth/logout' || path.endsWith('/auth/logout'))) {
+  if (method === 'POST' && (path === '/auth/logout' || path === '/api/auth/logout')) {
     return authLogoutHandler(req, res);
   }
-  if (method === 'GET' && (path === '/api/auth/me' || path === '/auth/me' || path.endsWith('/auth/me'))) {
+  if (method === 'GET' && (path === '/auth/me' || path === '/api/auth/me')) {
     return authMeHandler(req, res);
   }
 
-  if (method === 'GET' && (path === '/api/courses' || path === '/courses')) {
+  if (method === 'GET' && (path === '/courses' || path === '/api/courses')) {
     return coursesHandler(req, res);
   }
-  if (method === 'GET' && (path === '/api/projects' || path === '/projects')) {
+  if (method === 'GET' && (path === '/projects' || path === '/api/projects')) {
     return projectsHandler(req, res);
   }
-  if (method === 'GET' && (path === '/api/events' || path === '/events')) {
+  if (method === 'GET' && (path === '/events' || path === '/api/events')) {
     return eventsHandler(req, res);
   }
-  if (method === 'POST' && (path === '/api/events/register' || path === '/events/register')) {
+  if (method === 'POST' && (path === '/events/register' || path === '/api/events/register')) {
     return eventsRegisterHandler(req, res);
   }
-  if (method === 'GET' && (path === '/api/partners' || path === '/partners')) {
+  if (method === 'GET' && (path === '/partners' || path === '/api/partners')) {
     return partnersHandler(req, res);
   }
-  if (method === 'GET' && (path === '/api/testimonials' || path === '/testimonials')) {
+  if (method === 'GET' && (path === '/testimonials' || path === '/api/testimonials')) {
     return testimonialsHandler(req, res);
   }
-  if (method === 'GET' && (path === '/api/news' || path === '/news')) {
+  if (method === 'GET' && (path === '/news' || path === '/api/news')) {
     return newsHandler(req, res);
   }
-  if (method === 'POST' && (path === '/api/news/add' || path === '/news/add')) {
+  if (method === 'POST' && (path === '/news/add' || path === '/api/news/add')) {
     return newsAddHandler(req, res);
   }
-  if (method === 'POST' && (path === '/api/enquiry/submit' || path === '/enquiry/submit')) {
+  if (method === 'POST' && (path === '/enquiry/submit' || path === '/api/enquiry/submit')) {
     return enquirySubmitHandler(req, res);
   }
-  if (method === 'POST' && (path === '/api/membership/submit' || path === '/membership/submit')) {
+  if (method === 'POST' && (path === '/membership/submit' || path === '/api/membership/submit')) {
     return membershipSubmitHandler(req, res);
   }
-  if (method === 'POST' && (path === '/api/membership/checkout' || path === '/membership/checkout')) {
+  if (method === 'POST' && (path === '/membership/checkout' || path === '/api/membership/checkout')) {
     return membershipCheckoutHandler(req, res);
   }
-  if (method === 'POST' && (path === '/api/membership/verify-email' || path === '/membership/verify-email')) {
+  if (method === 'POST' && (path === '/membership/verify-email' || path === '/api/membership/verify-email')) {
     return membershipVerifyEmailHandler(req, res);
   }
-  if (method === 'POST' && (path === '/api/verification/request' || path === '/verification/request')) {
+  if (method === 'POST' && (path === '/verification/request' || path === '/api/verification/request')) {
     return verificationRequestHandler(req, res);
   }
-  if (method === 'POST' && (path === '/api/verification/confirm' || path === '/verification/confirm')) {
+  if (method === 'POST' && (path === '/verification/confirm' || path === '/api/verification/confirm')) {
     return verificationConfirmHandler(req, res);
   }
-  if (method === 'POST' && (path === '/api/certificates/issue' || path === '/certificates/issue')) {
+  if (method === 'POST' && (path === '/certificates/issue' || path === '/api/certificates/issue')) {
     return certificatesIssueHandler(req, res);
   }
-  if (method === 'GET' && (path === '/api/verify' || path === '/verify')) {
+  if (method === 'GET' && (path === '/verify' || path === '/api/verify')) {
     return verifyHandler(req, res);
   }
 
-  if (method === 'POST' && (path === '/api/admin/upload' || path === '/admin/upload')) {
+  if (method === 'POST' && (path === '/admin/upload' || path === '/api/admin/upload')) {
     return adminUploadHandler(req, res);
   }
 
-  if (path === '/api/admin' || path === '/admin' || path.startsWith('/api/admin/') || path.startsWith('/admin/')) {
-    const adminPath = path.replace(/^\/(?:api\/)?admin\/?/, '').split('/').filter(Boolean);
-    if (adminPath.length === 0 && method === 'GET') {
-      req.query = { path: ['overview'] };
-      return adminHandler(req, res);
-    }
-    req.query = { path: adminPath };
+  if (path === '/admin' || path === '/api/admin' || path.startsWith('/admin/') || path.startsWith('/api/admin/')) {
     return adminHandler(req, res);
   }
 
-  if ((path === '/api/auth/change-password' || path === '/auth/change-password') && method === 'GET') {
+  if ((path === '/auth/change-password' || path === '/api/auth/change-password') && method === 'GET') {
     return res.status(405).json({ error: 'Method not allowed.' });
   }
 
