@@ -23,87 +23,91 @@ import adminHandler from '../server-lib/api-routes/admin/[[...path]].js';
 
 export default async function handler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const pathname = url.pathname;
+  let pathname = url.pathname;
 
-  if (req.method === 'GET' && pathname === '/api/health') {
+  if (pathname.startsWith('/api')) {
+    pathname = pathname.slice(4);
+    if (!pathname.startsWith('/')) pathname = '/' + pathname;
+  }
+
+  if (pathname === '/api/health' || pathname === '/health') {
     return healthHandler(req, res);
   }
 
-  if (req.method === 'POST' && pathname === '/api/auth/login') {
+  if ((pathname === '/api/auth/login' || pathname === '/auth/login') && req.method === 'POST') {
     return authLoginHandler(req, res);
   }
-  if (req.method === 'POST' && pathname === '/api/auth/logout') {
+  if ((pathname === '/api/auth/logout' || pathname === '/auth/logout') && req.method === 'POST') {
     return authLogoutHandler(req, res);
   }
-  if (req.method === 'GET' && pathname === '/api/auth/me') {
+  if ((pathname === '/api/auth/me' || pathname === '/auth/me') && req.method === 'GET') {
     return authMeHandler(req, res);
   }
 
-  if (req.method === 'GET' && pathname === '/api/courses') {
+  if ((pathname === '/api/courses' || pathname === '/courses') && req.method === 'GET') {
     return coursesHandler(req, res);
   }
-  if (req.method === 'GET' && pathname === '/api/projects') {
+  if ((pathname === '/api/projects' || pathname === '/projects') && req.method === 'GET') {
     return projectsHandler(req, res);
   }
-  if (req.method === 'GET' && pathname === '/api/events') {
+  if ((pathname === '/api/events' || pathname === '/events') && req.method === 'GET') {
     return eventsHandler(req, res);
   }
-  if (req.method === 'POST' && pathname === '/api/events/register') {
+  if ((pathname === '/api/events/register' || pathname === '/events/register') && req.method === 'POST') {
     return eventsRegisterHandler(req, res);
   }
-  if (req.method === 'GET' && pathname === '/api/partners') {
+  if ((pathname === '/api/partners' || pathname === '/partners') && req.method === 'GET') {
     return partnersHandler(req, res);
   }
-  if (req.method === 'GET' && pathname === '/api/testimonials') {
+  if ((pathname === '/api/testimonials' || pathname === '/testimonials') && req.method === 'GET') {
     return testimonialsHandler(req, res);
   }
-  if (req.method === 'GET' && pathname === '/api/news') {
+  if ((pathname === '/api/news' || pathname === '/news') && req.method === 'GET') {
     return newsHandler(req, res);
   }
-  if (req.method === 'POST' && pathname === '/api/news/add') {
+  if ((pathname === '/api/news/add' || pathname === '/news/add') && req.method === 'POST') {
     return newsAddHandler(req, res);
   }
-  if (req.method === 'POST' && pathname === '/api/enquiry/submit') {
+  if ((pathname === '/api/enquiry/submit' || pathname === '/enquiry/submit') && req.method === 'POST') {
     return enquirySubmitHandler(req, res);
   }
-  if (req.method === 'POST' && pathname === '/api/membership/submit') {
+  if ((pathname === '/api/membership/submit' || pathname === '/membership/submit') && req.method === 'POST') {
     return membershipSubmitHandler(req, res);
   }
-  if (req.method === 'POST' && pathname === '/api/membership/checkout') {
+  if ((pathname === '/api/membership/checkout' || pathname === '/membership/checkout') && req.method === 'POST') {
     return membershipCheckoutHandler(req, res);
   }
-  if (req.method === 'POST' && pathname === '/api/membership/verify-email') {
+  if ((pathname === '/api/membership/verify-email' || pathname === '/membership/verify-email') && req.method === 'POST') {
     return membershipVerifyEmailHandler(req, res);
   }
-  if (req.method === 'POST' && pathname === '/api/verification/request') {
+  if ((pathname === '/api/verification/request' || pathname === '/verification/request') && req.method === 'POST') {
     return verificationRequestHandler(req, res);
   }
-  if (req.method === 'POST' && pathname === '/api/verification/confirm') {
+  if ((pathname === '/api/verification/confirm' || pathname === '/verification/confirm') && req.method === 'POST') {
     return verificationConfirmHandler(req, res);
   }
-  if (req.method === 'POST' && pathname === '/api/certificates/issue') {
+  if ((pathname === '/api/certificates/issue' || pathname === '/certificates/issue') && req.method === 'POST') {
     return certificatesIssueHandler(req, res);
   }
-  if (req.method === 'GET' && pathname === '/api/verify') {
+  if ((pathname === '/api/verify' || pathname === '/verify') && req.method === 'GET') {
     return verifyHandler(req, res);
   }
 
-  if (req.method === 'POST' && pathname === '/api/admin/upload') {
+  if ((pathname === '/api/admin/upload' || pathname === '/admin/upload') && req.method === 'POST') {
     return adminUploadHandler(req, res);
   }
 
-  if (pathname.startsWith('/api/admin/')) {
-    const adminPath = pathname.replace('/api/admin/', '');
-    const segments = adminPath.split('/').filter(Boolean);
-    if (segments.length === 0 && req.method === 'GET') {
+  if (pathname.startsWith('/api/admin/') || pathname.startsWith('/admin/')) {
+    const adminPath = pathname.replace(/^\/(?:api\/)?admin\//, '').split('/').filter(Boolean);
+    if (adminPath.length === 0 && req.method === 'GET') {
       req.query = { path: ['overview'] };
       return adminHandler(req, res);
     }
-    req.query = { path: segments };
+    req.query = { path: adminPath };
     return adminHandler(req, res);
   }
 
-  if (req.method === 'GET' && pathname === '/api/auth/change-password') {
+  if ((pathname === '/api/auth/change-password' || pathname === '/auth/change-password') && req.method === 'GET') {
     return res.status(405).json({ error: 'Method not allowed.' });
   }
 
