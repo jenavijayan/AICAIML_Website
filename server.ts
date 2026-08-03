@@ -22,7 +22,7 @@ import {
 import { SUPABASE_ENABLED } from './lib/supabase';
 
 const SESSION_COOKIE = 'aicaiml_session';
-const EXEMPT_ADMIN_EMAIL = 'anuyaparamasivan@gmail.com';
+const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
 const entryFile = process.argv[1] ? path.resolve(process.argv[1]) : path.resolve('.');
 const __filename = entryFile;
 const __dirname = path.dirname(entryFile);
@@ -1282,15 +1282,15 @@ Membership & Treasury Desk, AICAIML Council`;
   }
 
   // Seed the developer test account on every startup (idempotent).
-  // When Supabase is configured the dev user (developer@aicaiml.org / Test@123456)
+  // When Supabase is configured the dev user (vendhanftpwatch@gmail.com / vendhan123)
   // is always seeded so the initial admin can sign in on first deploy.
   // Set SEED_DEV_USER=false to opt out on hardened production deployments.
   if (process.env.SEED_DEV_USER !== 'false') {
     if (SUPABASE_ENABLED) {
       await seedDevUser();
-      console.log('Dev account ready: developer@aicaiml.org (role: admin, plan: Premium)');
+      console.log('Dev account ready: vendhanftpwatch@gmail.com (role: admin, plan: Premium)');
     } else {
-      console.warn('Supabase is not configured. Dev account available via fallback (developer@aicaiml.org / Test@123456).');
+      console.warn('Supabase is not configured. Dev account available via fallback (vendhanftpwatch@gmail.com / vendhan123).');
     }
   }
 

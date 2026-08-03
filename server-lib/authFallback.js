@@ -1,9 +1,9 @@
 import crypto from 'crypto';
 import { supabase, SUPABASE_ENABLED } from './supabaseClient.js';
 
-const FALLBACK_AUTH_EMAIL = (process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || 'developer@aicaiml.org').trim().toLowerCase();
-const FALLBACK_AUTH_PASSWORD = (process.env.ADMIN_PASSWORD || 'Test@123456').trim();
-const EXEMPT_ADMIN_EMAIL = 'anuyaparamasivan@gmail.com';
+const FALLBACK_AUTH_EMAIL = (process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || 'vendhanftpwatch@gmail.com').trim().toLowerCase();
+const FALLBACK_AUTH_PASSWORD = (process.env.ADMIN_PASSWORD || 'vendhan123').trim();
+const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
 const FALLBACK_AUTH_SECRET = process.env.AUTH_SESSION_SECRET || 'aicaiml-dev-session-secret';
 const SESSION_COOKIE = 'aicaiml_session';
 const FALLBACK_USER_ID = 'user-dev-001';

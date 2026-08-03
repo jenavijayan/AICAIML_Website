@@ -8,7 +8,7 @@ import { Button } from './ui';
 import { useFormVerification } from '../hooks/useFormVerification';
 import EmailVerification from './EmailVerification';
 
-const EXEMPT_ADMIN_EMAIL = 'anuyaparamasivan@gmail.com';
+const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
 
 interface FormProps {
   category: 'student' | 'msme' | 'corporate' | 'school' | 'university';

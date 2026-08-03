@@ -52,6 +52,6 @@ INSERT INTO public.testimonials (id, name, designation, organization, quote, ava
 ('test-3', 'Aman Deep Singh', 'Lead ML Researcher', 'Nvidia Research Labs India', 'The academic conferences organized by AICAIML represent a rare nexus of rigorous peer-review and active corporate interest. An essential catalyst for Indias deep-tech rise.', 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80', NOW())
 ON CONFLICT (id) DO NOTHING;
 
--- Seed admin user (password: Test@123456)
+-- Seed admin user (password: vendhan123)
 -- This uses Node.js crypto in the app, but for Supabase we''ll handle it via the app seedDevUser function
 -- No need to insert manually here since seedDevUser runs on startup

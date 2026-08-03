@@ -128,8 +128,8 @@ npm run dev
 Starts the combined Express + Vite dev server at **http://localhost:3000** with hot reload.
 
 A development admin/premium account is auto-seeded on first run:
-- **Email:** `developer@aicaiml.org`
-- **Password:** `Test@123456`
+- **Email:** `vendhanftpwatch@gmail.com`
+- **Password:** `vendhan123`
 
 ### 5. Build & run for production
 ```bash
@@ -215,8 +215,8 @@ All data lives in Supabase (PostgreSQL), configured via the `SUPABASE_URL`, `SUP
 Access the admin dashboard at: `http://localhost:3000/#admin`
 
 Default credentials:
-- **Email:** `developer@aicaiml.org`
-- **Password:** `Test@123456`
+- **Email:** `vendhanftpwatch@gmail.com`
+- **Password:** `vendhan123`
 
 You can also create additional admin users from the Admin Dashboard > Registered Users tab.
 

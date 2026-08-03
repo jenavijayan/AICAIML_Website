@@ -7,7 +7,7 @@ import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import { useFormVerification } from '../hooks/useFormVerification';
 import EmailVerification from '../components/EmailVerification';
 
-const EXEMPT_ADMIN_EMAIL = 'anuyaparamasivan@gmail.com';
+const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
 
 export default function Contact() {
   useDocumentMeta('Contact', 'Reach the AICAIML Executive Secretariat for course support, institutional registrations, or general enquiries.');

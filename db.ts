@@ -2,9 +2,9 @@ import { supabase, SUPABASE_ENABLED } from './lib/supabase';
 import { initialNews, initialCourses, initialProjects, initialEvents, initialPartners, initialTestimonials } from './src/cmsData';
 import crypto from 'crypto';
 
-const FALLBACK_AUTH_EMAIL = (process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || 'developer@aicaiml.org').trim().toLowerCase();
-const FALLBACK_AUTH_PASSWORD = (process.env.ADMIN_PASSWORD || 'Test@123456').trim();
-const EXEMPT_ADMIN_EMAIL = 'anuyaparamasivan@gmail.com';
+const FALLBACK_AUTH_EMAIL = (process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || 'vendhanftpwatch@gmail.com').trim().toLowerCase();
+const FALLBACK_AUTH_PASSWORD = (process.env.ADMIN_PASSWORD || 'vendhan123').trim();
+const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
 const FALLBACK_AUTH_SECRET = process.env.AUTH_SESSION_SECRET || 'aicaiml-dev-session-secret';
 const FALLBACK_USER_ID = 'user-dev-001';
 
@@ -643,14 +643,14 @@ export async function seedDevUser(): Promise<PublicUser> {
   const existingById = Array.isArray(byId) && byId.length > 0 ? byId[0] : null;
   if (existingById) return toPublicUser(existingById);
 
-  const byEmail = await getUserByEmail('developer@aicaiml.org');
+  const byEmail = await getUserByEmail('vendhanftpwatch@gmail.com');
   if (byEmail) return byEmail;
 
   return createUser({
     id: 'user-dev-001',
-    name: 'Developer',
-    email: 'developer@aicaiml.org',
-    password: 'Test@123456',
+    name: 'Admin User',
+    email: 'vendhanftpwatch@gmail.com',
+    password: 'vendhan123',
     role: 'admin',
     membershipPlan: 'Premium',
     membershipStatus: 'active',
