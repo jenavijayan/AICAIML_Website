@@ -53,6 +53,7 @@ function AppShell() {
   const [currentPage, setCurrentPage] = useState<string>('home');
   const [selectedCategory, setSelectedCategory] = useState<'student' | 'msme' | 'corporate' | 'school' | 'university' | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+  const [redirectAfterLogin, setRedirectAfterLogin] = useState<string | null>(null);
 
   // Modal States
   const [isDonationOpen, setIsDonationOpen] = useState(false);
@@ -199,11 +200,21 @@ function AppShell() {
         setCurrentPage(hash);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
+      if (hash === 'admin') {
+        setCurrentPage('admin');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     };
     window.addEventListener('hashchange', handleHashChange);
     handleHashChange();
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
+
+  useEffect(() => {
+    if (currentPage !== 'login') {
+      setRedirectAfterLogin(null);
+    }
+  }, [currentPage]);
 
   return (
     <div id="aicaiml-root" className="min-h-screen bg-white flex flex-col font-sans">
@@ -412,13 +423,28 @@ function AppShell() {
 
             {currentPage === 'login' && (
               <Suspense fallback={<RouteFallback />}>
-                <Login setCurrentPage={setCurrentPage} />
+                <Login 
+                  setCurrentPage={setCurrentPage} 
+                  redirectAfterLogin={redirectAfterLogin}
+                />
               </Suspense>
             )}
 
              {currentPage === 'admin' && user?.role === 'admin' && (
                <Suspense fallback={<RouteFallback />}>
                  <AdminDashboard />
+               </Suspense>
+              )}
+
+             {currentPage === 'admin' && !user?.role && (
+               <Suspense fallback={<RouteFallback />}>
+                 <Login 
+                   setCurrentPage={(page) => {
+                     setRedirectAfterLogin(null);
+                     setCurrentPage(page);
+                   }}
+                   redirectAfterLogin="admin"
+                 />
                </Suspense>
               )}
 

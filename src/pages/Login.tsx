@@ -7,9 +7,10 @@ import logo from '../images/logo-web.png';
 
 interface LoginProps {
   setCurrentPage: (page: string) => void;
+  redirectAfterLogin?: string | null;
 }
 
-export default function Login({ setCurrentPage }: LoginProps) {
+export default function Login({ setCurrentPage, redirectAfterLogin }: LoginProps) {
   useDocumentMeta('Council Member Sign In', 'Sign in to access AICAIML member courses, certifications, and council registries.');
   const { login } = useAuth();
   const [email, setEmail] = useState('');
@@ -27,7 +28,7 @@ export default function Login({ setCurrentPage }: LoginProps) {
     setLoading(false);
 
     if (result.success) {
-      setCurrentPage('home');
+      setCurrentPage(redirectAfterLogin || 'home');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       setLoginError(result.error || 'Invalid email or password.');
