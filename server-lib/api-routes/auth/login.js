@@ -1,4 +1,4 @@
-import { SESSION_COOKIE, getFallbackUser, getSupabaseUser, createSupabaseSession, seedDevUser, parseJsonBody } from '../_lib/authFallback.js';
+import { SESSION_COOKIE, getFallbackUser, getSupabaseUser, createSupabaseSession, seedDevUser, parseJsonBody } from '../../authFallback.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {

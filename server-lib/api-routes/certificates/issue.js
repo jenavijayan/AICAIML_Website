@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_ENABLED } from '../_lib/supabaseClient.js';
+import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
 
 function parseJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -35,24 +35,29 @@ export default async function handler(req, res) {
 
   try {
     const body = await parseJsonBody(req);
-    const { title, summary, category, readTime } = body;
-    if (!title || !summary) {
-      return res.status(400).json({ error: 'Title and summary are required' });
+    const { code, courseId, courseTitle } = body;
+    if (!code || !courseId || !courseTitle) {
+      return res.status(400).json({ error: 'Certificate code, course ID and title are required.' });
     }
-    const article = {
-      id: 'news-' + Date.now(),
-      title,
-      summary,
-      date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }),
-      category: category || 'Announcement',
-      read_time: readTime || '3 min read',
-      created_at: new Date().toISOString()
-    };
-    const { error } = await supabase.from('news').insert(article);
+
+    const { data: existing } = await supabase.from('certificates').select('*').eq('code', code).maybeSingle();
+    if (existing) {
+      return res.json({ success: true, message: 'Certificate already exists.' });
+    }
+
+    const { error } = await supabase.from('certificates').insert({
+      code,
+      user_id: 'anonymous',
+      user_name: 'Anonymous User',
+      course_id: courseId,
+      course_title: courseTitle,
+      issued_at: new Date().toISOString()
+    });
     if (error) throw error;
-    res.json({ success: true, article });
+
+    res.json({ success: true });
   } catch (err) {
-    console.error('News add error:', err);
-    res.status(500).json({ error: err.message || 'Failed to add news.' });
+    console.error('Certificate issue error:', err);
+    res.status(500).json({ error: err.message || 'Failed to issue certificate.' });
   }
 };

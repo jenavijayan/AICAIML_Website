@@ -1,4 +1,4 @@
-import { SUPABASE_ENABLED } from '../_lib/supabaseClient.js';
+import { SUPABASE_ENABLED } from '../../supabaseClient.js';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 

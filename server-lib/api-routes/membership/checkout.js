@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_ENABLED } from '../_lib/supabaseClient.js';
+import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
 import nodemailer from 'nodemailer';
 
 function parseJsonBody(req) {

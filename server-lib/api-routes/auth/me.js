@@ -1,4 +1,4 @@
-import { SESSION_COOKIE, parseCookies, getSupabaseSessionUser, verifySignedSessionToken } from '../_lib/authFallback.js';
+import { SESSION_COOKIE, parseCookies, getSupabaseSessionUser, verifySignedSessionToken } from '../../authFallback.js';
 
 export default async function handler(req, res) {
   const cookies = parseCookies(req.headers.cookie || '');

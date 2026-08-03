@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_ENABLED } from '../_lib/supabaseClient.js';
+import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
 
 function parseJsonBody(req) {
   return new Promise((resolve, reject) => {
