@@ -1,4 +1,4 @@
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
 const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
@@ -15,4 +15,4 @@ if (SUPABASE_ENABLED) {
   supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 }
 
-module.exports = { supabase, SUPABASE_ENABLED };
+export { supabase, SUPABASE_ENABLED }

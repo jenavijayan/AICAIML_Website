@@ -1,12 +1,7 @@
-const {
-  getSupabaseSessionUser,
-  verifySignedSessionToken,
-  parseCookies,
-  SESSION_COOKIE,
-  SUPABASE_ENABLED,
-  toPublicUser
-} = require('../_lib/authFallback');
-const { supabase } = require('../_lib/supabaseClient');
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
+import { getSupabaseSessionUser, verifySignedSessionToken, parseCookies, SESSION_COOKIE, SUPABASE_ENABLED, toPublicUser } from '../_lib/authFallback.js';
+import { supabase } from '../_lib/supabaseClient.js';
 
 function parseJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -111,10 +106,10 @@ async function handleApproveApplication(req, res, id) {
   const { data: existingUser } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
   if (!existingUser) {
     memberId = 'mem-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
-    generatedPassword = require('crypto').randomBytes(10).toString('base64url').substring(0, 16);
+    generatedPassword = crypto.randomBytes(10).toString('base64url').substring(0, 16);
     const { hash, salt } = (() => {
-      const salt = require('crypto').randomBytes(16).toString('hex');
-      const hash = require('crypto').scryptSync(generatedPassword, salt, 64).toString('hex');
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.scryptSync(generatedPassword, salt, 64).toString('hex');
       return { hash, salt };
     })();
     const { error: createError } = await supabase.from('users').insert({
@@ -164,7 +159,6 @@ async function handleApproveApplication(req, res, id) {
   emailBody += `\n\nWelcome to India's premier AI/ML advancements ecosystem!\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
 
   try {
-    const nodemailer = require('nodemailer');
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_APP_PASSWORD }
@@ -207,7 +201,6 @@ async function handleRejectApplication(req, res, id) {
   const emailBody = `Dear ${name},\n\nThank you for your interest in AICAIML ${application.category.toUpperCase()} membership.\n\nAfter careful review by the Membership Board, we regret to inform you that your application (Ref: ${application.id}) has been marked as Rejected.\n\n${reason ? `REJECTION REASON:\n${reason}\n\n` : ''}If you believe this decision was made in error, or if you would like to address the concerns noted above, please contact our Membership Office at support@aic-aiml.org with your application reference number.\n\nYou may also choose to resubmit a new application after addressing the feedback provided.\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
 
   try {
-    const nodemailer = require('nodemailer');
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_APP_PASSWORD }
@@ -275,8 +268,8 @@ async function handleCreateUser(req, res) {
     ? ['access_premium_courses', 'access_course_videos', 'access_downloadable_resources', 'access_quizzes', 'access_certificates', 'access_members_only_pages']
     : [];
   const { hash, salt } = (() => {
-    const salt = require('crypto').randomBytes(16).toString('hex');
-    const hash = require('crypto').scryptSync(password, salt, 64).toString('hex');
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync(password, salt, 64).toString('hex');
     return { hash, salt };
   })();
 
@@ -503,7 +496,6 @@ async function handleUpload(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
 
-  const busboy = require('busboy') || null;
   // Vercel serverless functions don't have easy multipart parsing.
   // Fallback: expect base64 data URL in a JSON body field 'fileData'
   const body = await parseJsonBody(req);
@@ -531,7 +523,7 @@ async function handleUpload(req, res) {
   json(res, 200, { success: true, url: urlData.publicUrl });
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (!SUPABASE_ENABLED) {
     return json(res, 500, { error: 'Supabase is not configured on this deployment. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.' });
   }

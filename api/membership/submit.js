@@ -1,5 +1,6 @@
-const { supabase, SUPABASE_ENABLED } = require('../_lib/supabaseClient');
-const crypto = require('crypto');
+import { supabase, SUPABASE_ENABLED } from '../_lib/supabaseClient.js';
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 
 function parseJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -30,7 +31,6 @@ async function sendEmail(to, subject, text) {
     return { sent: false };
   }
   try {
-    const nodemailer = require('nodemailer');
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_APP_PASSWORD }
@@ -43,7 +43,7 @@ async function sendEmail(to, subject, text) {
   }
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (!SUPABASE_ENABLED) {
     return res.status(500).json({ error: 'Supabase is not configured on this deployment.' });
   }

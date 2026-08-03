@@ -1,6 +1,6 @@
-const { supabase, SUPABASE_ENABLED } = require('../_lib/supabaseClient');
+import { supabase, SUPABASE_ENABLED } from '../_lib/supabaseClient.js';
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   try {
     if (!SUPABASE_ENABLED) {
       return res.status(500).json({ error: 'Supabase is not configured on this deployment.' });

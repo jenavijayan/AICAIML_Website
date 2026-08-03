@@ -1,6 +1,6 @@
-const { SESSION_COOKIE, parseCookies, deleteSupabaseSession } = require('../_lib/authFallback');
+import { SESSION_COOKIE, parseCookies, deleteSupabaseSession } from '../_lib/authFallback.js';
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   const cookies = parseCookies(req.headers.cookie || '');
   const token = cookies[SESSION_COOKIE];
   if (token) {

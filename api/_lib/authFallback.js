@@ -1,5 +1,5 @@
-const crypto = require('crypto');
-const { supabase, SUPABASE_ENABLED } = require('./supabaseClient');
+import crypto from 'crypto';
+import { supabase, SUPABASE_ENABLED } from './supabaseClient.js';
 
 const FALLBACK_AUTH_EMAIL = (process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || 'developer@aicaiml.org').trim().toLowerCase();
 const FALLBACK_AUTH_PASSWORD = (process.env.ADMIN_PASSWORD || 'Test@123456').trim();
@@ -200,7 +200,7 @@ function parseJsonBody(req) {
   });
 }
 
-module.exports = {
+export {
   SESSION_COOKIE,
   FALLBACK_AUTH_EMAIL,
   FALLBACK_AUTH_PASSWORD,
@@ -220,4 +220,4 @@ module.exports = {
   hashPassword,
   verifyPassword,
   SUPABASE_ENABLED
-};
+}
