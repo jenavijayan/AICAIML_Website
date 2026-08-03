@@ -24,7 +24,17 @@ import adminHandler from '../server-lib/api-routes/admin/[[...path]].js';
 function getPath(req) {
   let path = req.url || '';
   if (path.includes('?')) path = path.split('?')[0];
-  return path.replace(/\/+$/, '');
+  path = path.replace(/\/+$/, '');
+
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    try {
+      path = new URL(path).pathname;
+    } catch {
+      // ignore
+    }
+  }
+
+  return path;
 }
 
 export default async function handler(req, res) {
@@ -35,13 +45,13 @@ export default async function handler(req, res) {
     return healthHandler(req, res);
   }
 
-  if (method === 'POST' && (path === '/api/auth/login' || path === '/auth/login')) {
+  if (method === 'POST' && (path === '/api/auth/login' || path === '/auth/login' || path.endsWith('/auth/login'))) {
     return authLoginHandler(req, res);
   }
-  if (method === 'POST' && (path === '/api/auth/logout' || path === '/auth/logout')) {
+  if (method === 'POST' && (path === '/api/auth/logout' || path === '/auth/logout' || path.endsWith('/auth/logout'))) {
     return authLogoutHandler(req, res);
   }
-  if (method === 'GET' && (path === '/api/auth/me' || path === '/auth/me')) {
+  if (method === 'GET' && (path === '/api/auth/me' || path === '/auth/me' || path.endsWith('/auth/me'))) {
     return authMeHandler(req, res);
   }
 
