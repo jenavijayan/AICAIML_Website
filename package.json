@@ -2,11 +2,12 @@
   "name": "react-example",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
+    "build": "vite build && node -e \"if (process.env.VERCEL) { const fs=require('fs'); const path=require('path'); const src=path.resolve('dist'); const dest=path.resolve('.vercel','output','static'); fs.mkdirSync(dest,{recursive:true}); fs.cpSync(src,dest,{recursive:true}); }\"",
+    "build:server": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build:all": "npm run build && npm run build:server",
+    "start": "node -e \"if (process.env.VERCEL) { console.log('Running on Vercel, skipping server start'); } else { require('./dist/server.cjs') }\"",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
