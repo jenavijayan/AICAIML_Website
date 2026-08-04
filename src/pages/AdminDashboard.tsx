@@ -109,6 +109,10 @@ function mapApplication(row: any): AppRow {
   };
 }
 
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 export default function AdminDashboard() {
   useDocumentMeta('Admin Dashboard', 'Council administration panel for AICAIML membership management.');
   const { user, logout } = useAuth();
@@ -186,10 +190,11 @@ export default function AdminDashboard() {
     setAppsError(null);
     try {
       const data = await fetchJson('/api/admin/applications');
-      const mapped = (data || []).map(mapApplication);
+      const mapped = asArray<any>(data).map(mapApplication);
       setApps(mapped);
     } catch (err: any) {
       setAppsError(err.message || 'Failed to load applications.');
+      setApps([]);
     } finally {
       setAppsLoading(false);
     }
@@ -200,9 +205,10 @@ export default function AdminDashboard() {
     setMembersError(null);
     try {
       const data = await fetchJson('/api/admin/users');
-      setMembers(data || []);
+      setMembers(asArray<any>(data));
     } catch (err: any) {
       setMembersError(err.message || 'Failed to load members.');
+      setMembers([]);
     } finally {
       setMembersLoading(false);
     }
@@ -246,7 +252,10 @@ export default function AdminDashboard() {
     }
   }, [loadApplications]);
 
-  const filteredApps = apps.filter((a) => {
+  const safeApps = asArray<AppRow>(apps);
+  const safeMembers = asArray<any>(members);
+
+  const filteredApps = safeApps.filter((a) => {
     const q = appSearch.toLowerCase();
     const matchesSearch =
       !appSearch ||
@@ -254,12 +263,13 @@ export default function AdminDashboard() {
       a.email.toLowerCase().includes(q) ||
       a.membershipNo.toLowerCase().includes(q) ||
       a.id.toLowerCase().includes(q);
-    const matchesStatus = appFilterStatus === 'all' || a.status.toLowerCase() === appFilterStatus.toLowerCase();
+    const status = String(a.status || '').toLowerCase();
+    const matchesStatus = appFilterStatus === 'all' || status === appFilterStatus.toLowerCase();
     const matchesCategory = appFilterCategory === 'all' || a.category.toLowerCase() === appFilterCategory.toLowerCase();
     return matchesSearch && matchesStatus && matchesCategory;
   });
 
-  const filteredMembers = members.filter((m: any) => {
+  const filteredMembers = safeMembers.filter((m: any) => {
     const q = memberSearch.toLowerCase();
     const matchesSearch =
       !memberSearch ||
@@ -276,9 +286,9 @@ export default function AdminDashboard() {
     loadMembers();
   }, [loadOverview, loadApplications, loadMembers]);
 
-  const pendingCount = apps.filter((a) => a.status.toLowerCase() === 'pending').length;
-  const approvedCount = apps.filter((a) => a.status.toLowerCase() === 'approved').length;
-  const rejectedCount = apps.filter((a) => a.status.toLowerCase() === 'rejected').length;
+  const pendingCount = safeApps.filter((a) => String(a.status || '').toLowerCase() === 'pending').length;
+  const approvedCount = safeApps.filter((a) => String(a.status || '').toLowerCase() === 'approved').length;
+  const rejectedCount = safeApps.filter((a) => String(a.status || '').toLowerCase() === 'rejected').length;
 
   if (!user || user.role !== 'admin') {
     return (
