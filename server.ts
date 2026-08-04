@@ -171,10 +171,12 @@ async function generateMembershipId() {
   const year = new Date().getFullYear();
   const pattern = `AICAIML-${year}-%`;
 
-  const [usersRes, appsRes] = await Promise.all([
-    supabase.from('users').select('membership_no').like('membership_no', pattern),
-    supabase.from('applications').select('member_id').like('member_id', pattern)
-  ]);
+  const usersRes = await supabase.from('users').select('membership_no').like('membership_no', pattern);
+  let appsRes = await supabase.from('applications').select('member_id').like('member_id', pattern);
+
+  if (appsRes.error && String(appsRes.error.message || '').toLowerCase().includes('member_id')) {
+    appsRes = { data: [], error: null } as any;
+  }
 
   if (usersRes.error) throw usersRes.error;
   if (appsRes.error) throw appsRes.error;

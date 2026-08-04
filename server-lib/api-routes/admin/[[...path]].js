@@ -63,10 +63,13 @@ async function generateMembershipId() {
   const year = new Date().getFullYear();
   const pattern = `AICAIML-${year}-%`;
 
-  const [usersRes, appsRes] = await Promise.all([
-    supabase.from('users').select('membership_no').like('membership_no', pattern),
-    supabase.from('applications').select('member_id').like('member_id', pattern)
-  ]);
+  const usersRes = await supabase.from('users').select('membership_no').like('membership_no', pattern);
+  let appsRes = await supabase.from('applications').select('member_id').like('member_id', pattern);
+
+  // Backward compatibility for deployments where member_id may not exist yet.
+  if (appsRes.error && String(appsRes.error.message || '').toLowerCase().includes('member_id')) {
+    appsRes = { data: [], error: null };
+  }
 
   failIfSupabaseError(usersRes, 'Failed to read users for membership ID generation');
   failIfSupabaseError(appsRes, 'Failed to read applications for membership ID generation');
@@ -92,7 +95,7 @@ async function ensureMemberUser({ name, email, membershipId }) {
     const tempPassword = crypto.randomBytes(24).toString('base64url');
     const { hash, salt } = hashPassword(tempPassword);
     const now = new Date().toISOString();
-    const createRes = await supabase.from('users').insert({
+    let createRes = await supabase.from('users').insert({
       id: 'mem-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
       name,
       email,
@@ -103,20 +106,47 @@ async function ensureMemberUser({ name, email, membershipId }) {
       membership_plan: null,
       membership_status: 'active',
       must_reset_password: true,
-      permissions: [],
+      permissions: '[]',
       created_at: now,
       updated_at: now
     }).select('*').single();
+
+    // Fallback payload for deployments with older users schema.
+    if (createRes.error) {
+      createRes = await supabase.from('users').insert({
+        id: 'mem-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        name,
+        email,
+        password_hash: hash,
+        password_salt: salt,
+        role: 'member',
+        membership_no: membershipId,
+        membership_status: 'active',
+        permissions: '[]',
+        created_at: now
+      }).select('*').single();
+    }
+
     failIfSupabaseError(createRes, 'Failed to create approved member user');
     existingUser = createRes.data;
   } else {
-    const updateRes = await supabase.from('users').update({
+    let updateRes = await supabase.from('users').update({
       role: 'member',
       membership_no: existingUser.membership_no || membershipId,
       membership_status: 'active',
       name: existingUser.name || name,
       updated_at: new Date().toISOString()
     }).eq('id', existingUser.id).select('*').single();
+
+    if (updateRes.error) {
+      updateRes = await supabase.from('users').update({
+        role: 'member',
+        membership_no: existingUser.membership_no || membershipId,
+        membership_status: 'active',
+        name: existingUser.name || name
+      }).eq('id', existingUser.id).select('*').single();
+    }
+
     if (!updateRes.error) {
       existingUser = updateRes.data;
     }
@@ -130,12 +160,20 @@ async function issuePasswordSetupToken(userId) {
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
   const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
-  const updateRes = await supabase.from('users').update({
+  let updateRes = await supabase.from('users').update({
     password_reset_token: tokenHash,
     password_reset_expires_at: expiresAt,
     must_reset_password: true,
     updated_at: new Date().toISOString()
   }).eq('id', userId);
+
+  if (updateRes.error) {
+    updateRes = await supabase.from('users').update({
+      password_reset_token: tokenHash,
+      password_reset_expires_at: expiresAt,
+      must_reset_password: true
+    }).eq('id', userId);
+  }
 
   failIfSupabaseError(updateRes, 'Failed to create password setup token');
   return { rawToken, expiresAt };
