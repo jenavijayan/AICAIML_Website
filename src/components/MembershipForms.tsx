@@ -192,9 +192,17 @@ export default function MembershipForms({ category, onBack }: FormProps) {
     setError(null);
     setLoading(true);
 
+<<<<<<< HEAD
     const isExempt = commonForm.email.trim().toLowerCase() === EXEMPT_ADMIN_EMAIL;
 
     if (!verified && !isExempt) {
+=======
+    if (!verified) {
+      const sent = await requestCode();
+      if (!sent) {
+        setError('Failed to send verification code. Please try again.');
+      }
+>>>>>>> bc7ca36 (Repair local dev startup and add CI/test scaffolding)
       setLoading(false);
       return;
     }
@@ -248,15 +256,6 @@ export default function MembershipForms({ category, onBack }: FormProps) {
     }
 
     try {
-      if (!verified) {
-        const sent = await requestCode();
-        if (!sent) {
-          throw new Error('Failed to send verification code. Please try again.');
-        }
-        setLoading(false);
-        return;
-      }
-
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 

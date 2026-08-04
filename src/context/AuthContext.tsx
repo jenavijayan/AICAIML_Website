@@ -78,8 +78,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-    setUser(null);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } catch {
+      // Ignore network failures and clear the local session state.
+    } finally {
+      setUser(null);
+    }
   };
 
   const hasPremiumAccess = !!user && (user.role === 'admin' || user.membershipStatus === 'active');

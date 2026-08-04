@@ -24,6 +24,7 @@ export function useFormVerification({ email, onVerified }: UseFormVerificationOp
 
   const requestCode = useCallback(async (): Promise<boolean> => {
     if (!email) return false;
+    if (step === 'requesting') return false;
     setStep('requesting');
     setMessage(null);
     try {
@@ -47,7 +48,7 @@ export function useFormVerification({ email, onVerified }: UseFormVerificationOp
       setStep('error');
       return false;
     }
-  }, [email]);
+  }, [email, step]);
 
   const confirmCode = useCallback(async (): Promise<boolean> => {
     if (!email || !verificationCode) {

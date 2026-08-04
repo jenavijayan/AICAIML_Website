@@ -2,10 +2,17 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+<<<<<<< HEAD
 import crypto from 'crypto';
+=======
+import net from 'node:net';
+>>>>>>> bc7ca36 (Repair local dev startup and add CI/test scaffolding)
 import multer from 'multer';
 import nodemailer from 'nodemailer';
 import { createServer as createViteServer } from 'vite';
+import { fileURLToPath } from 'node:url';
+import type { Server as HttpServer } from 'node:http';
+import type { ViteDevServer } from 'vite';
 import {
   insertEnquiry, insertApplication, insertEventRegistration, getNews, insertNewsArticle, insertMembershipPayment,
   verifyCredentials, createSession, getSessionUser, deleteSession, updateUserPassword, seedDevUser,
@@ -19,6 +26,7 @@ import {
   updateApplicationStatus, createUser, verifyApplicationEmail, getApplicationByEmail,
   PublicUser
 } from './db';
+<<<<<<< HEAD
 import { SUPABASE_ENABLED } from './lib/supabase';
 
 const SESSION_COOKIE = 'aicaiml_session';
@@ -26,6 +34,25 @@ const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
 const entryFile = process.argv[1] ? path.resolve(process.argv[1]) : path.resolve('.');
 const __filename = entryFile;
 const __dirname = path.dirname(entryFile);
+=======
+import { isSupabaseConfigured } from './lib/supabase';
+
+const SESSION_COOKIE = 'aicaiml_session';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+declare global {
+  var __aicaimlDevServerInstance: Promise<{ app: express.Express; server: HttpServer; port: number; vite?: ViteDevServer }> | undefined;
+}
+
+function resolveDevHost() {
+  const configuredHost = (process.env.HOST || '127.0.0.1').trim().toLowerCase();
+  if (!configuredHost || configuredHost === '0.0.0.0' || configuredHost === '::' || configuredHost === 'localhost') {
+    return '127.0.0.1';
+  }
+  return configuredHost;
+}
+>>>>>>> bc7ca36 (Repair local dev startup and add CI/test scaffolding)
 
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -50,8 +77,57 @@ function clearSessionCookie(res: express.Response) {
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`);
 }
 
+<<<<<<< HEAD
+=======
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
+}
+
+function createRateLimitMiddleware(windowMs = 60_000, maxRequests = 20) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const key = req.ip || 'unknown';
+    const now = Date.now();
+    const entry = rateLimitStore.get(key);
+
+    if (!entry || entry.resetAt <= now) {
+      rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+
+    if (entry.count >= maxRequests) {
+      return res.status(429).json({ error: 'Too many requests. Please try again shortly.' });
+    }
+
+    entry.count += 1;
+    next();
+  };
+}
+
+function validateRequestBody(schema: Record<string, { required?: boolean; type?: 'string' | 'number' | 'boolean'; minLength?: number }>) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const body = req.body ?? {};
+    for (const [field, rules] of Object.entries(schema)) {
+      const value = body[field];
+      if (rules.required && (value === undefined || value === null || value === '')) {
+        return res.status(400).json({ error: `${field} is required.` });
+      }
+      if (value !== undefined && value !== null) {
+        if (rules.type && typeof value !== rules.type) {
+          return res.status(400).json({ error: `${field} must be of type ${rules.type}.` });
+        }
+        if (rules.minLength && typeof value === 'string' && value.trim().length < rules.minLength) {
+          return res.status(400).json({ error: `${field} must be at least ${rules.minLength} characters.` });
+        }
+      }
+    }
+    next();
+  };
+}
+
+>>>>>>> bc7ca36 (Repair local dev startup and add CI/test scaffolding)
 const verificationStore = new Map<string, { code: string; expiresAt: Date }>();
 const verifiedEmails = new Set<string>();
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 
 // Real email delivery for the Contact page, via Gmail SMTP + an app password.
 // Credentials live in .env (gitignored) — see that file for setup instructions.
@@ -168,6 +244,7 @@ const upload = multer({
   }
 });
 
+<<<<<<< HEAD
 const documentUpload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadsDir),
@@ -218,9 +295,53 @@ async function startServer() {
     console.error('Server error:', err);
     process.exit(1);
   });
+=======
+function getPreferredPort(preferredPort: number, host = '127.0.0.1'): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', (err: NodeJS.ErrnoException) => {
+      reject(err);
+    });
+    server.once('listening', () => {
+      const assignedPort = (server.address() as net.AddressInfo).port;
+      server.close(() => resolve(assignedPort));
+    });
+    server.listen(preferredPort, host);
+  });
+}
+
+async function shutdownServer() {
+  if (!globalThis.__aicaimlDevServerInstance) return;
+  const instance = await globalThis.__aicaimlDevServerInstance;
+  await new Promise<void>((resolve) => {
+    instance.server.close(() => resolve());
+  });
+  if (instance.vite) {
+    await instance.vite.close();
+  }
+  globalThis.__aicaimlDevServerInstance = undefined;
+}
+
+export async function startServer() {
+  if (globalThis.__aicaimlDevServerInstance) {
+    return globalThis.__aicaimlDevServerInstance;
+  }
+
+  const startPromise = (async () => {
+    const app = express();
+    const preferredPort = Number(process.env.PORT) || 3000;
+    const host = resolveDevHost();
+    const PORT = await getPreferredPort(preferredPort, host);
+    const hmrPort = Number(process.env.HMR_PORT || 3001);
+
+    app.disable('x-powered-by');
+
+  const publicRateLimit = createRateLimitMiddleware();
+>>>>>>> bc7ca36 (Repair local dev startup and add CI/test scaffolding)
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+  app.use('/api', publicRateLimit);
 
   app.use((req, res, next) => {
     if (req.body === undefined) req.body = {};
@@ -250,7 +371,7 @@ async function startServer() {
       verificationStore.set(cleanEmail, { code, expiresAt });
       const emailBody = `Your AICAIML verification code is: ${code}\n\nThis code expires in 10 minutes.`;
       const { sent } = await sendEnquiryEmail(cleanEmail, 'AICAIML Email Verification', emailBody);
-      res.json({ success: true, sent, message: 'Verification code sent.', devCode: code });
+      res.json({ success: true, sent, message: 'Verification code sent.' });
     } catch (err: any) {
       console.error('Verification request error:', err);
       res.status(500).json({ error: err.message || 'Failed to send verification code.' });
@@ -292,10 +413,15 @@ async function startServer() {
   });
 
   // API Route - Login (email + password, session cookie)
-  app.post('/api/auth/login', async (req, res) => {
+  const loginValidation = validateRequestBody({
+    email: { required: true, type: 'string', minLength: 3 },
+    password: { required: true, type: 'string', minLength: 8 }
+  });
+
+  app.post('/api/auth/login', loginValidation, async (req, res) => {
     const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required.' });
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address.' });
     }
 
     const user = await verifyCredentials(email, password);
@@ -903,7 +1029,13 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
   });
 
   // API Route - General Enquiry Form Submission with Honeypot Anti-Spam Check
-  app.post('/api/enquiry/submit', async (req, res) => {
+  const enquiryValidation = validateRequestBody({
+    name: { required: true, type: 'string', minLength: 2 },
+    email: { required: true, type: 'string', minLength: 3 },
+    message: { required: true, type: 'string', minLength: 5 }
+  });
+
+  app.post('/api/enquiry/submit', enquiryValidation, async (req, res) => {
     const { name, email, phone, message, honeypot } = req.body;
 
     // Honeypot spam check - if filled, silently reject or fail with a validation message
@@ -912,8 +1044,8 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
       return res.status(400).json({ error: 'Validation failed. Spam activity detected.' });
     }
 
-    if (!name || !email || !message) {
-      return res.status(400).json({ error: 'Name, email, and message are required.' });
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address.' });
     }
 
     const emailLower = email.trim().toLowerCase();
@@ -1267,9 +1399,21 @@ Membership & Treasury Desk, AICAIML Council`;
   });
 
   // Vite development integration or production serving
+  let vite: ViteDevServer | undefined;
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
+    vite = await createViteServer({
+      server: {
+        middlewareMode: true,
+        host,
+        port: PORT,
+        strictPort: true,
+        hmr: {
+          host,
+          port: hmrPort,
+          protocol: 'ws',
+          clientPort: hmrPort,
+        },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -1281,6 +1425,7 @@ Membership & Treasury Desk, AICAIML Council`;
     });
   }
 
+<<<<<<< HEAD
   // Seed the developer test account on every startup (idempotent).
   // When Supabase is configured the dev user (vendhanftpwatch@gmail.com / vendhan123)
   // is always seeded so the initial admin can sign in on first deploy.
@@ -1296,8 +1441,42 @@ Membership & Treasury Desk, AICAIML Council`;
 
   await verifyMailTransporter();
 
+=======
+  // Seed the developer test account on every startup (idempotent). Only in
+  // non-production so a known test password never ends up on a live deploy
+  // unless explicitly opted into via SEED_DEV_USER=true.
+  if (isSupabaseConfigured() && (process.env.NODE_ENV !== 'production' || process.env.SEED_DEV_USER === 'true')) {
+    try {
+      await seedDevUser();
+      console.log('Dev account ready: developer@aicaiml.org (role: admin, plan: Premium)');
+    } catch (err) {
+      console.warn('Skipping dev account seeding because the Supabase database is unavailable:', err);
+    }
+  } else if (!isSupabaseConfigured()) {
+    console.warn('Supabase is not configured. Database-backed features will be unavailable until SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.');
+  }
+
+    const server = app.listen(PORT, host, () => {
+      console.log(`Server running on http://${host}:${PORT}`);
+    });
+
+    return { app, server, port: PORT, vite };
+  })();
+
+  globalThis.__aicaimlDevServerInstance = startPromise;
+  return startPromise;
+>>>>>>> bc7ca36 (Repair local dev startup and add CI/test scaffolding)
 }
 
-startServer().catch((err) => {
-  console.error('Error starting server:', err);
-});
+if (process.env.NODE_ENV !== 'test') {
+  process.on('SIGINT', () => {
+    shutdownServer().finally(() => process.exit(0));
+  });
+  process.on('SIGTERM', () => {
+    shutdownServer().finally(() => process.exit(0));
+  });
+
+  startServer().catch((err) => {
+    console.error('Error starting server:', err);
+  });
+}
