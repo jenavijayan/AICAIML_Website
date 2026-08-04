@@ -1083,19 +1083,7 @@ AICAIML Council`;
       return res.status(403).json({ error: 'Email verification required. Please verify your email before submitting.' });
     }
 
-    const existingUser = await getUserByEmail(email);
-    if (existingUser) {
-      return res.status(409).json({ error: 'An account with this email address already exists. If you have forgotten your credentials, please contact support@aic-aiml.org.' });
-    }
-
-    const existingApp = await getApplicationByEmail(email);
-    if (existingApp && existingApp.data) {
-      return res.status(409).json({
-        error: `An application with this email address has already been submitted (Ref: ${existingApp.data.id}, Status: ${existingApp.data.status}). Each member is allowed only one application per email address.`,
-        existingApplicationId: existingApp.data.id,
-        existingStatus: existingApp.data.status
-      });
-    }
+    // Allow multiple submissions from the same email for now.
 
     const membershipNo = 'AIC-' + category.substring(0, 3).toUpperCase() + '-' + Math.floor(100000 + Math.random() * 900000);
     const applicationId = 'APP-' + Math.random().toString(36).substr(2, 9).toUpperCase();

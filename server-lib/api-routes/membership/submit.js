@@ -76,19 +76,7 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Email verification required. Please verify your email before submitting.' });
     }
 
-    const { data: existingUser } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
-    if (existingUser) {
-      return res.status(409).json({ error: 'An account with this email address already exists. If you have forgotten your credentials, please contact support@aic-aiml.org.' });
-    }
-
-    const { data: existingApp } = await supabase.from('applications').select('*').eq('email', email).order('submitted_at', { ascending: false }).limit(1).maybeSingle();
-    if (existingApp) {
-      return res.status(409).json({
-        error: `An application with this email address has already been submitted (Ref: ${existingApp.id}, Status: ${existingApp.status}). Each member is allowed only one application per email address.`,
-        existingApplicationId: existingApp.id,
-        existingStatus: existingApp.status
-      });
-    }
+    // Allow multiple submissions from the same email for now.
 
     const membershipNo = 'AIC-' + category.substring(0, 3).toUpperCase() + '-' + Math.floor(100000 + Math.random() * 900000);
     const applicationId = 'APP-' + Math.random().toString(36).substr(2, 9).toUpperCase();
