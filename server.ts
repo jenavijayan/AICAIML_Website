@@ -2,15 +2,11 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-<<<<<<< HEAD
 import crypto from 'crypto';
-=======
 import net from 'node:net';
->>>>>>> bc7ca36 (Repair local dev startup and add CI/test scaffolding)
 import multer from 'multer';
 import nodemailer from 'nodemailer';
 import { createServer as createViteServer } from 'vite';
-import { fileURLToPath } from 'node:url';
 import type { Server as HttpServer } from 'node:http';
 import type { ViteDevServer } from 'vite';
 import {
@@ -26,19 +22,11 @@ import {
   updateApplicationStatus, createUser, verifyApplicationEmail, getApplicationByEmail,
   PublicUser
 } from './db';
-<<<<<<< HEAD
-import { SUPABASE_ENABLED } from './lib/supabase';
-
-const SESSION_COOKIE = 'aicaiml_session';
-const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
-const entryFile = process.argv[1] ? path.resolve(process.argv[1]) : path.resolve('.');
-const __filename = entryFile;
-const __dirname = path.dirname(entryFile);
-=======
 import { isSupabaseConfigured } from './lib/supabase';
 
 const SESSION_COOKIE = 'aicaiml_session';
-const __filename = fileURLToPath(import.meta.url);
+const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
+const __filename = process.argv[1] ? path.resolve(process.argv[1]) : path.resolve('.');
 const __dirname = path.dirname(__filename);
 
 declare global {
@@ -52,7 +40,6 @@ function resolveDevHost() {
   }
   return configuredHost;
 }
->>>>>>> bc7ca36 (Repair local dev startup and add CI/test scaffolding)
 
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -77,8 +64,6 @@ function clearSessionCookie(res: express.Response) {
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`);
 }
 
-<<<<<<< HEAD
-=======
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
 }
@@ -124,7 +109,6 @@ function validateRequestBody(schema: Record<string, { required?: boolean; type?:
   };
 }
 
->>>>>>> bc7ca36 (Repair local dev startup and add CI/test scaffolding)
 const verificationStore = new Map<string, { code: string; expiresAt: Date }>();
 const verifiedEmails = new Set<string>();
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
@@ -244,7 +228,6 @@ const upload = multer({
   }
 });
 
-<<<<<<< HEAD
 const documentUpload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadsDir),
@@ -263,39 +246,6 @@ const documentUpload = multer({
   }
 });
 
-async function findAvailablePort(startPort: number): Promise<number> {
-  const net = await import('net');
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.listen(startPort, '0.0.0.0', () => {
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : startPort;
-      server.close(() => resolve(port));
-    });
-    server.on('error', () => {
-      server.close();
-      resolve(findAvailablePort(startPort + 1));
-    });
-  });
-}
-
-async function startServer() {
-  const app = express();
-  const desiredPort = parseInt(process.env.PORT || '3000', 10);
-  const PORT = await findAvailablePort(desiredPort);
-
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-    if (PORT !== desiredPort) {
-      console.warn(`Port ${desiredPort} was in use, fell back to ${PORT}`);
-    }
-  });
-
-  server.on('error', (err: any) => {
-    console.error('Server error:', err);
-    process.exit(1);
-  });
-=======
 function getPreferredPort(preferredPort: number, host = '127.0.0.1'): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -337,7 +287,6 @@ export async function startServer() {
     app.disable('x-powered-by');
 
   const publicRateLimit = createRateLimitMiddleware();
->>>>>>> bc7ca36 (Repair local dev startup and add CI/test scaffolding)
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
@@ -1425,47 +1374,46 @@ Membership & Treasury Desk, AICAIML Council`;
     });
   }
 
-<<<<<<< HEAD
   // Seed the developer test account on every startup (idempotent).
-  // When Supabase is configured the dev user (vendhanftpwatch@gmail.com / vendhan123)
-  // is always seeded so the initial admin can sign in on first deploy.
-  // Set SEED_DEV_USER=false to opt out on hardened production deployments.
+  // When Supabase is configured, the default admin account is seeded so the
+  // initial admin can sign in on first deploy. Set SEED_DEV_USER=false to opt out.
   if (process.env.SEED_DEV_USER !== 'false') {
-    if (SUPABASE_ENABLED) {
-      await seedDevUser();
-      console.log('Dev account ready: vendhanftpwatch@gmail.com (role: admin, plan: Premium)');
+    if (isSupabaseConfigured()) {
+      try {
+        await seedDevUser();
+        console.log('Dev account ready: vendhanftpwatch@gmail.com (role: admin, plan: Premium)');
+      } catch (err) {
+        console.warn('Skipping dev account seeding because the Supabase database is unavailable:', err);
+      }
     } else {
-      console.warn('Supabase is not configured. Dev account available via fallback (vendhanftpwatch@gmail.com / vendhan123).');
+      console.warn('Supabase is not configured. Database-backed features will be unavailable until SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.');
     }
   }
 
   await verifyMailTransporter();
 
-=======
-  // Seed the developer test account on every startup (idempotent). Only in
-  // non-production so a known test password never ends up on a live deploy
-  // unless explicitly opted into via SEED_DEV_USER=true.
-  if (isSupabaseConfigured() && (process.env.NODE_ENV !== 'production' || process.env.SEED_DEV_USER === 'true')) {
-    try {
-      await seedDevUser();
-      console.log('Dev account ready: developer@aicaiml.org (role: admin, plan: Premium)');
-    } catch (err) {
-      console.warn('Skipping dev account seeding because the Supabase database is unavailable:', err);
-    }
-  } else if (!isSupabaseConfigured()) {
-    console.warn('Supabase is not configured. Database-backed features will be unavailable until SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.');
-  }
+  const server = app.listen(PORT, host);
+  await new Promise<void>((resolve, reject) => {
+    const onListening = () => {
+      server.off('error', onError);
+      resolve();
+    };
+    const onError = (error: Error) => {
+      server.off('listening', onListening);
+      reject(error);
+    };
 
-    const server = app.listen(PORT, host, () => {
-      console.log(`Server running on http://${host}:${PORT}`);
-    });
+    server.once('listening', onListening);
+    server.once('error', onError);
+  });
 
-    return { app, server, port: PORT, vite };
-  })();
+  console.log(`Server running on http://${host}:${PORT}`);
+
+  return { app, server, port: PORT, vite };
+})();
 
   globalThis.__aicaimlDevServerInstance = startPromise;
   return startPromise;
->>>>>>> bc7ca36 (Repair local dev startup and add CI/test scaffolding)
 }
 
 if (process.env.NODE_ENV !== 'test') {

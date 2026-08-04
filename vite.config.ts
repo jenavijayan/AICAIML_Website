@@ -45,14 +45,5 @@ export default defineConfig(({ mode }) => {
         : false,
       watch: hmrEnabled ? undefined : null,
     },
-    build: {
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            vendor: ['react', 'react-dom', 'lucide-react', 'motion'],
-          },
-        },
-      },
-    },
   };
 });
