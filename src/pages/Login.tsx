@@ -129,6 +129,13 @@ export default function Login({ setCurrentPage, redirectAfterLogin }: LoginProps
           >
             Register Membership
           </button>
+          {' '}or{' '}
+          <button
+            onClick={() => setCurrentPage('member-login')}
+            className="text-accent-sky hover:text-corp-blue font-semibold underline"
+          >
+            Member Login
+          </button>
         </div>
 
       </div>

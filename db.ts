@@ -478,7 +478,9 @@ export interface PublicUser {
   email: string;
   role: string;
   membershipPlan: string | null;
+  membershipNo?: string | null;
   membershipStatus: string;
+  mustResetPassword?: boolean;
   permissions: string[];
 }
 
@@ -489,7 +491,9 @@ function toPublicUser(row: any): PublicUser {
     email: row.email,
     role: row.role,
     membershipPlan: row.membership_plan,
+    membershipNo: row.membership_no || null,
     membershipStatus: row.membership_status,
+    mustResetPassword: Boolean(row.must_reset_password),
     permissions: Array.isArray(row.permissions) ? row.permissions : JSON.parse(row.permissions || '[]')
   };
 }

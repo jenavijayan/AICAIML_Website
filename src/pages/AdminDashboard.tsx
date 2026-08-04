@@ -219,9 +219,9 @@ export default function AdminDashboard() {
     try {
       const result = await postJson(`/api/admin/applications/${app.id}/approve`, {});
       if (result.credentials) {
-        setActionMessage(`Application ${app.id} approved. Member ID: ${result.credentials.memberId} — credentials emailed to ${app.email}.`);
+        setActionMessage(`Application ${app.id} approved. Member ID: ${result.credentials.memberId} — secure password setup link emailed to ${app.email}.`);
       } else {
-        setActionMessage(`Application ${app.id} approved. Member credentials already exist.`);
+        setActionMessage(`Application ${app.id} approved.`);
       }
       setActionMessageIsError(false);
       await loadApplications();
@@ -595,7 +595,7 @@ export default function AdminDashboard() {
                                           <>
                                             <button
                                               onClick={() => {
-                                                if (confirm(`Approve application ${app.id}? Login credentials will be generated and emailed to ${app.email}.`)) {
+                                                if (confirm(`Approve application ${app.id}? A membership ID and secure password setup link will be emailed to ${app.email}.`)) {
                                                   handleApprove(app);
                                                 }
                                               }}

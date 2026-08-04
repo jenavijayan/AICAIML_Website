@@ -22,6 +22,17 @@ export function useFormVerification({ email, onVerified }: UseFormVerificationOp
   const [message, setMessage] = useState<string | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
 
+  async function parseApiResponse(res: Response) {
+    const text = await res.text();
+    if (!text) return {} as any;
+    try {
+      return JSON.parse(text);
+    } catch {
+      const snippet = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+      throw new Error(`Server returned an invalid response. ${snippet || 'Non-JSON body received.'}`);
+    }
+  }
+
   const requestCode = useCallback(async (): Promise<boolean> => {
     if (!email) return false;
     if (step === 'requesting') return false;
@@ -37,7 +48,7 @@ export function useFormVerification({ email, onVerified }: UseFormVerificationOp
         signal: controller.signal
       });
       clearTimeout(timeoutId);
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) {
         throw new Error(data.error || 'Failed to send verification code.');
       }
@@ -68,7 +79,7 @@ export function useFormVerification({ email, onVerified }: UseFormVerificationOp
         signal: controller.signal
       });
       clearTimeout(timeoutId);
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) {
         throw new Error(data.error || 'Invalid verification code.');
       }

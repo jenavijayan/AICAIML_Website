@@ -46,6 +46,101 @@ function failIfSupabaseError(result, context) {
   }
 }
 
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return { hash, salt };
+}
+
+function parseMembershipSequence(memberId, year) {
+  const match = String(memberId || '').match(/^AICAIML-(\d{4})-(\d{4})$/);
+  if (!match) return 0;
+  if (match[1] !== String(year)) return 0;
+  return Number(match[2]) || 0;
+}
+
+async function generateMembershipId() {
+  const year = new Date().getFullYear();
+  const pattern = `AICAIML-${year}-%`;
+
+  const [usersRes, appsRes] = await Promise.all([
+    supabase.from('users').select('membership_no').like('membership_no', pattern),
+    supabase.from('applications').select('member_id').like('member_id', pattern)
+  ]);
+
+  failIfSupabaseError(usersRes, 'Failed to read users for membership ID generation');
+  failIfSupabaseError(appsRes, 'Failed to read applications for membership ID generation');
+
+  let maxSeq = 0;
+
+  for (const row of usersRes.data || []) {
+    maxSeq = Math.max(maxSeq, parseMembershipSequence(row.membership_no, year));
+  }
+  for (const row of appsRes.data || []) {
+    maxSeq = Math.max(maxSeq, parseMembershipSequence(row.member_id, year));
+  }
+
+  const nextSeq = maxSeq + 1;
+  return `AICAIML-${year}-${String(nextSeq).padStart(4, '0')}`;
+}
+
+async function ensureMemberUser({ name, email, membershipId }) {
+  let { data: existingUser, error: existingUserError } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
+  failIfSupabaseError({ error: existingUserError }, 'Failed to check existing member user');
+
+  if (!existingUser) {
+    const tempPassword = crypto.randomBytes(24).toString('base64url');
+    const { hash, salt } = hashPassword(tempPassword);
+    const now = new Date().toISOString();
+    const createRes = await supabase.from('users').insert({
+      id: 'mem-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      name,
+      email,
+      password_hash: hash,
+      password_salt: salt,
+      role: 'member',
+      membership_no: membershipId,
+      membership_plan: null,
+      membership_status: 'active',
+      must_reset_password: true,
+      permissions: [],
+      created_at: now,
+      updated_at: now
+    }).select('*').single();
+    failIfSupabaseError(createRes, 'Failed to create approved member user');
+    existingUser = createRes.data;
+  } else {
+    const updateRes = await supabase.from('users').update({
+      role: 'member',
+      membership_no: existingUser.membership_no || membershipId,
+      membership_status: 'active',
+      name: existingUser.name || name,
+      updated_at: new Date().toISOString()
+    }).eq('id', existingUser.id).select('*').single();
+    if (!updateRes.error) {
+      existingUser = updateRes.data;
+    }
+  }
+
+  return existingUser;
+}
+
+async function issuePasswordSetupToken(userId) {
+  const rawToken = crypto.randomBytes(32).toString('base64url');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+  const updateRes = await supabase.from('users').update({
+    password_reset_token: tokenHash,
+    password_reset_expires_at: expiresAt,
+    must_reset_password: true,
+    updated_at: new Date().toISOString()
+  }).eq('id', userId);
+
+  failIfSupabaseError(updateRes, 'Failed to create password setup token');
+  return { rawToken, expiresAt };
+}
+
 async function handleOverview(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
@@ -119,61 +214,33 @@ async function handleApproveApplication(req, res, id) {
   const name = formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName || 'Applicant';
   const email = (formData.emailId || formData.email || 'applicant@aic-aiml.org').trim().toLowerCase();
 
-  let memberId = null;
-  let generatedPassword = null;
+  const memberId = application.member_id && /^AICAIML-\d{4}-\d{4}$/.test(application.member_id)
+    ? application.member_id
+    : await generateMembershipId();
 
-  const { data: existingUser } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
-  if (!existingUser) {
-    memberId = 'mem-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
-    generatedPassword = crypto.randomBytes(10).toString('base64url').substring(0, 16);
-    const { hash, salt } = (() => {
-      const salt = crypto.randomBytes(16).toString('hex');
-      const hash = crypto.scryptSync(generatedPassword, salt, 64).toString('hex');
-      return { hash, salt };
-    })();
-    const { error: createError } = await supabase.from('users').insert({
-      id: memberId,
-      name,
-      email,
-      password_hash: hash,
-      password_salt: salt,
-      role: 'member',
-      membership_plan: null,
-      membership_status: 'active',
-      permissions: [],
-      created_at: new Date().toISOString()
-    });
-    if (createError) {
-      console.error('Failed to create member user:', createError);
-    }
-  }
+  const memberUser = await ensureMemberUser({ name, email, membershipId: memberId });
+  const { rawToken } = await issuePasswordSetupToken(memberUser.id);
 
   const { error: updateError } = await supabase.from('applications').update({
     status: 'Approved',
     reviewed_at: new Date().toISOString(),
     approval_date: approvalDate,
-    member_id: memberId || existingUser?.id
+    member_id: memberId
   }).eq('id', id);
 
   if (updateError) {
     const { error: retryError } = await supabase.from('applications').update({
       status: 'Approved',
       reviewed_at: new Date().toISOString(),
-      approval_date: approvalDate
+      approval_date: approvalDate,
+      member_id: memberId
     }).eq('id', id);
     if (retryError) return json(res, 500, { error: retryError.message });
   }
 
   const baseUrl = process.env.BASE_URL || 'https://www.aic-aiml.org';
-  let emailBody = `Dear ${name},\n\nCongratulations! Your application for AICAIML ${application.category.toUpperCase()} membership has been reviewed and approved by the Membership Board.\n\nAPPROVAL DETAILS:\n - Membership ID: ${application.membership_no}\n - Application ID: ${application.id}\n - Membership Type: ${application.category.toUpperCase()}\n - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nNEXT STEPS:\n 1. Please use your Membership ID for all future correspondence with the Council.\n 2. Access to member-only courses, events, and chapter activities will be enabled upon first login.`;
-
-  if (memberId && generatedPassword) {
-    emailBody += `\n\nSECURE MEMBER PORTAL CREDENTIALS:\n - Member ID / Username: ${memberId}\n - Password: ${generatedPassword}\n\nYou can sign in at: ${baseUrl}/#login\n\nPlease keep these credentials secure and do not share them with anyone.\nYou may change your password after your first login.`;
-  } else if (existingUser) {
-    emailBody += `\n\n1. Your existing member portal account (linked to this email) is now active. You can sign in at: ${baseUrl}/#login`;
-  } else {
-    emailBody += `\n\n1. Your digital membership certificate and secure member portal login credentials will be issued shortly to this email address.`;
-  }
+  const setPasswordLink = `${baseUrl}/#set-password?token=${encodeURIComponent(rawToken)}`;
+  let emailBody = `Dear ${name},\n\nCongratulations! Your application for AICAIML ${application.category.toUpperCase()} membership has been reviewed and approved by the Membership Board.\n\nAPPROVAL DETAILS:\n - Membership ID: ${memberId}\n - Application ID: ${application.id}\n - Membership Type: ${application.category.toUpperCase()}\n - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nSECURE ACCOUNT SETUP:\n 1. Set your member portal password using the secure link below:\n ${setPasswordLink}\n 2. This link expires in 48 hours for your account security.\n 3. After setting the password, sign in at: ${baseUrl}/#member-login\n\nPlease keep your credentials private and do not share them.`;
 
   emailBody += `\n\nWelcome to India's premier AI/ML advancements ecosystem!\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
 
@@ -191,8 +258,8 @@ async function handleApproveApplication(req, res, id) {
 
   json(res, 200, {
     success: true,
-    application: { ...application, status: 'Approved', approval_date: approvalDate },
-    credentials: memberId && generatedPassword ? { memberId, password: generatedPassword } : null
+    application: { ...application, status: 'Approved', approval_date: approvalDate, member_id: memberId },
+    credentials: { memberId, setupLinkSent: true }
   });
 }
 

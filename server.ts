@@ -12,6 +12,7 @@ import type { ViteDevServer } from 'vite';
 import {
   insertEnquiry, insertApplication, insertEventRegistration, getNews, insertNewsArticle, insertMembershipPayment,
   verifyCredentials, createSession, getSessionUser, deleteSession, updateUserPassword, seedDevUser,
+  verifyPassword, hashPassword,
   getCourses, insertCourse, deleteCourse,
   getAllEnquiries, getAllApplications, getApplicationById, getAllEventRegistrations, getAllMemberships, getAllUsers, getUserByEmail,
   getMembershipByNo, insertCertificate, getCertificateByCode,
@@ -22,7 +23,7 @@ import {
   updateApplicationStatus, createUser, verifyApplicationEmail, getApplicationByEmail,
   PublicUser
 } from './db';
-import { isSupabaseConfigured } from './lib/supabase';
+import { isSupabaseConfigured, supabase } from './lib/supabase';
 
 const SESSION_COOKIE = 'aicaiml_session';
 const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
@@ -66,6 +67,127 @@ function clearSessionCookie(res: express.Response) {
 
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
+}
+
+function toPublicUserFromRow(row: any): PublicUser {
+  let permissions: string[] = [];
+  if (Array.isArray(row.permissions)) {
+    permissions = row.permissions;
+  } else if (typeof row.permissions === 'string') {
+    try {
+      permissions = JSON.parse(row.permissions);
+    } catch {
+      permissions = [];
+    }
+  }
+
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    membershipPlan: row.membership_plan || null,
+    membershipNo: row.membership_no || null,
+    membershipStatus: row.membership_status || 'inactive',
+    mustResetPassword: Boolean(row.must_reset_password),
+    permissions
+  };
+}
+
+function parseMembershipSequence(memberId: string | null | undefined, year: number) {
+  const match = String(memberId || '').match(/^AICAIML-(\d{4})-(\d{4})$/);
+  if (!match) return 0;
+  if (match[1] !== String(year)) return 0;
+  return Number(match[2]) || 0;
+}
+
+const INVALID_PASSWORD_MESSAGE = 'This password cannot be used. Please choose a different password and try again.';
+
+function validateMemberPassword(password: string) {
+  if (!password || password.length < 8 || password.length > 72) return false;
+  if (/\s/.test(password)) return false;
+  if (!/[a-z]/.test(password)) return false;
+  if (!/[A-Z]/.test(password)) return false;
+  if (!/\d/.test(password)) return false;
+  if (!/[^A-Za-z0-9]/.test(password)) return false;
+  return true;
+}
+
+async function upsertSupabaseAuthPassword(userRow: any, password: string) {
+  const create = await supabase.auth.admin.createUser({
+    email: userRow.email,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      local_user_id: userRow.id,
+      membership_no: userRow.membership_no || null,
+      role: 'member'
+    },
+    app_metadata: {
+      role: 'member'
+    }
+  });
+
+  if (!create.error) return;
+
+  const lower = String(create.error.message || '').toLowerCase();
+  const mayExist = lower.includes('already') || lower.includes('exists') || lower.includes('registered');
+  if (!mayExist) {
+    throw create.error;
+  }
+
+  let page = 1;
+  let foundUser: any = null;
+
+  while (page <= 20 && !foundUser) {
+    const listed = await supabase.auth.admin.listUsers({ page, perPage: 200 });
+    if (listed.error) throw listed.error;
+
+    const users = listed.data?.users || [];
+    foundUser = users.find((u: any) => String(u.email || '').toLowerCase() === String(userRow.email || '').toLowerCase()) || null;
+    if (users.length < 200) break;
+    page += 1;
+  }
+
+  if (!foundUser) {
+    throw new Error('Unable to locate existing Supabase Auth user for this email.');
+  }
+
+  const update = await supabase.auth.admin.updateUserById(foundUser.id, {
+    password,
+    email_confirm: true,
+    user_metadata: {
+      ...(foundUser.user_metadata || {}),
+      local_user_id: userRow.id,
+      membership_no: userRow.membership_no || null,
+      role: 'member'
+    }
+  });
+
+  if (update.error) throw update.error;
+}
+
+async function generateMembershipId() {
+  const year = new Date().getFullYear();
+  const pattern = `AICAIML-${year}-%`;
+
+  const [usersRes, appsRes] = await Promise.all([
+    supabase.from('users').select('membership_no').like('membership_no', pattern),
+    supabase.from('applications').select('member_id').like('member_id', pattern)
+  ]);
+
+  if (usersRes.error) throw usersRes.error;
+  if (appsRes.error) throw appsRes.error;
+
+  let maxSeq = 0;
+  for (const row of usersRes.data || []) {
+    maxSeq = Math.max(maxSeq, parseMembershipSequence(row.membership_no, year));
+  }
+  for (const row of appsRes.data || []) {
+    maxSeq = Math.max(maxSeq, parseMembershipSequence(row.member_id, year));
+  }
+
+  return `AICAIML-${year}-${String(maxSeq + 1).padStart(4, '0')}`;
 }
 
 function createRateLimitMiddleware(windowMs = 60_000, maxRequests = 20) {
@@ -383,6 +505,183 @@ export async function startServer() {
     res.json({ success: true, user });
   });
 
+  app.post('/api/auth/member/login', async (req, res) => {
+    try {
+      const identifier = String(req.body?.identifier || req.body?.email || req.body?.memberId || '').trim();
+      const password = String(req.body?.password || '');
+      if (!identifier || !password) {
+        return res.status(400).json({ error: 'Identifier and password are required.' });
+      }
+
+      const isEmailIdentifier = identifier.includes('@');
+      const userQuery = isEmailIdentifier
+        ? await supabase.from('users').select('*').eq('email', identifier.toLowerCase()).maybeSingle()
+        : await supabase.from('users').select('*').eq('membership_no', identifier.toUpperCase()).maybeSingle();
+
+      if (userQuery.error) {
+        return res.status(500).json({ error: userQuery.error.message });
+      }
+
+      const userRow = userQuery.data;
+      if (!userRow) {
+        if (isEmailIdentifier) {
+          const appStatusQuery = await supabase
+            .from('applications')
+            .select('status')
+            .eq('email', identifier.toLowerCase())
+            .order('submitted_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (!appStatusQuery.error && appStatusQuery.data) {
+            const status = String(appStatusQuery.data.status || '').toLowerCase();
+            if (status === 'pending') {
+              return res.status(403).json({ error: 'Your application is still pending review. You can sign in after approval.', status });
+            }
+            if (status === 'rejected') {
+              return res.status(403).json({ error: 'Your previous application was rejected. Please submit a new application to continue.', status });
+            }
+          }
+        }
+
+        return res.status(401).json({ error: 'Invalid member credentials.' });
+      }
+
+      if (String(userRow.role || '').toLowerCase() !== 'member') {
+        return res.status(403).json({ error: 'This account is not a member account.' });
+      }
+
+      const memberStatus = String(userRow.membership_status || '').toLowerCase();
+      if (memberStatus && memberStatus !== 'active') {
+        return res.status(403).json({ error: 'Your membership is not active yet.', status: memberStatus });
+      }
+
+      if (!verifyPassword(password, userRow.password_hash, userRow.password_salt)) {
+        return res.status(401).json({ error: 'Invalid member credentials.' });
+      }
+
+      if (userRow.must_reset_password) {
+        return res.status(403).json({
+          error: 'Password setup is required before first sign-in. Please use the link sent to your email.',
+          code: 'PASSWORD_SETUP_REQUIRED'
+        });
+      }
+
+      const { token, expiresAt } = await createSession(userRow.id);
+      setSessionCookie(res, token, expiresAt);
+      return res.json({ success: true, user: toPublicUserFromRow(userRow) });
+    } catch (err: any) {
+      console.error('Member login error:', err);
+      return res.status(500).json({ error: err.message || 'Unable to process member login.' });
+    }
+  });
+
+  app.post('/api/auth/member/set-password', async (req, res) => {
+    try {
+      const token = String(req.body?.token || '').trim();
+      const newPassword = String(req.body?.newPassword || '');
+      if (!token || !newPassword) {
+        return res.status(400).json({ error: 'Token and new password are required.' });
+      }
+      if (!validateMemberPassword(newPassword)) {
+        return res.status(400).json({ error: INVALID_PASSWORD_MESSAGE });
+      }
+
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const userQuery = await supabase.from('users').select('*').eq('password_reset_token', tokenHash).maybeSingle();
+      if (userQuery.error) {
+        return res.status(500).json({ error: userQuery.error.message });
+      }
+
+      const userRow = userQuery.data;
+      if (!userRow) {
+        return res.status(400).json({ error: 'This password setup link is invalid.' });
+      }
+
+      const expiresAt = userRow.password_reset_expires_at ? new Date(userRow.password_reset_expires_at) : null;
+      if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt < new Date()) {
+        return res.status(400).json({ error: 'This password setup link has expired. Ask admin to resend approval setup.' });
+      }
+
+      if (String(userRow.role || '').toLowerCase() !== 'member' || String(userRow.membership_status || '').toLowerCase() !== 'active') {
+        return res.status(403).json({ error: 'Only approved members can set their account password.' });
+      }
+
+      try {
+        await upsertSupabaseAuthPassword(userRow, newPassword);
+      } catch (authError) {
+        console.error('Supabase Auth password setup failed:', authError);
+        return res.status(400).json({ error: INVALID_PASSWORD_MESSAGE });
+      }
+
+      const { hash, salt } = hashPassword(newPassword);
+      const updateRes = await supabase.from('users').update({
+        password_hash: hash,
+        password_salt: salt,
+        password_reset_token: null,
+        password_reset_expires_at: null,
+        must_reset_password: false,
+        email_verified: true,
+        updated_at: new Date().toISOString()
+      }).eq('id', userRow.id);
+
+      if (updateRes.error) {
+        return res.status(500).json({ error: updateRes.error.message });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Password saved successfully. Please sign in on the Member Login page.'
+      });
+    } catch (err: any) {
+      console.error('Member set-password error:', err);
+      return res.status(500).json({ error: err.message || 'Unable to set password.' });
+    }
+  });
+
+  app.get('/api/auth/member/dashboard', async (req, res) => {
+    try {
+      const cookies = parseCookies(req.headers.cookie);
+      const token = cookies[SESSION_COOKIE];
+      const sessionUser = token ? await getSessionUser(token) : null;
+
+      if (!sessionUser) {
+        return res.status(401).json({ error: 'Not authenticated.' });
+      }
+      if (sessionUser.role !== 'member') {
+        return res.status(403).json({ error: 'Member access required.' });
+      }
+
+      const [appQuery, membershipQuery] = await Promise.all([
+        supabase.from('applications').select('*').eq('email', sessionUser.email).order('submitted_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('memberships').select('*').eq('email', sessionUser.email).order('paid_at', { ascending: false }).limit(1).maybeSingle()
+      ]);
+
+      if (appQuery.error) return res.status(500).json({ error: appQuery.error.message });
+      if (membershipQuery.error) return res.status(500).json({ error: membershipQuery.error.message });
+
+      const latestApplication = appQuery.data || null;
+      const latestMembership = membershipQuery.data || null;
+
+      return res.json({
+        profile: {
+          id: sessionUser.id,
+          name: sessionUser.name,
+          email: sessionUser.email,
+          membershipNo: sessionUser.membershipNo || latestApplication?.member_id || null,
+          membershipStatus: sessionUser.membershipStatus,
+          membershipPlan: sessionUser.membershipPlan || latestMembership?.plan_name || null,
+          joinedDate: latestApplication?.approval_date || latestMembership?.paid_at || null,
+          phone: latestApplication?.phone || latestMembership?.phone || null,
+          category: latestApplication?.category || latestMembership?.category || null
+        }
+      });
+    } catch (err: any) {
+      console.error('Member dashboard error:', err);
+      return res.status(500).json({ error: err.message || 'Unable to load member dashboard.' });
+    }
+  });
+
   // API Route - Logout
   app.post('/api/auth/logout', async (req, res) => {
     const cookies = parseCookies(req.headers.cookie);
@@ -477,64 +776,87 @@ export async function startServer() {
       const name = formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName || 'Applicant';
       const email = (formData.emailId || formData.email || 'applicant@aic-aiml.org').trim().toLowerCase();
 
-      let memberId: string | null = null;
-      let generatedPassword: string | null = null;
+      const memberId = application.member_id && /^AICAIML-\d{4}-\d{4}$/.test(application.member_id)
+        ? application.member_id
+        : await generateMembershipId();
 
-      const existingUser = await getUserByEmail(email);
-      if (!existingUser) {
-        memberId = 'mem-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
-        generatedPassword = crypto.randomBytes(10).toString('base64url').substring(0, 16);
+      const existingUserQuery = await supabase.from('users').select('*').eq('email', email).maybeSingle();
+      if (existingUserQuery.error) {
+        return res.status(500).json({ error: existingUserQuery.error.message });
+      }
 
-        await createUser({
-          id: memberId,
+      let userRow = existingUserQuery.data;
+      if (!userRow) {
+        const tempPassword = crypto.randomBytes(24).toString('base64url');
+        const created = await createUser({
+          id: 'mem-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
           name,
           email,
-          password: generatedPassword,
+          password: tempPassword,
           role: 'member',
           membershipPlan: null,
           membershipStatus: 'active',
           permissions: [],
-          membershipNo: application.membership_no
+          membershipNo: memberId
         });
+        const createdQuery = await supabase.from('users').select('*').eq('id', created.id).single();
+        if (createdQuery.error || !createdQuery.data) {
+          return res.status(500).json({ error: createdQuery.error?.message || 'Failed to load created member user.' });
+        }
+        userRow = createdQuery.data;
+      } else {
+        const syncUserRes = await supabase.from('users').update({
+          role: 'member',
+          membership_no: userRow.membership_no || memberId,
+          membership_status: 'active',
+          name: userRow.name || name,
+          updated_at: new Date().toISOString()
+        }).eq('id', userRow.id).select('*').single();
+        if (!syncUserRes.error && syncUserRes.data) {
+          userRow = syncUserRes.data;
+        }
       }
 
-      const updated = await updateApplicationStatus(application.id, 'Approved', approvalDate, memberId || undefined);
+      const rawSetupToken = crypto.randomBytes(32).toString('base64url');
+      const tokenHash = crypto.createHash('sha256').update(rawSetupToken).digest('hex');
+      const setupExpiry = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+      const setupTokenRes = await supabase.from('users').update({
+        password_reset_token: tokenHash,
+        password_reset_expires_at: setupExpiry,
+        must_reset_password: true,
+        membership_no: userRow.membership_no || memberId,
+        membership_status: 'active',
+        updated_at: new Date().toISOString()
+      }).eq('id', userRow.id);
+
+      if (setupTokenRes.error) {
+        return res.status(500).json({ error: setupTokenRes.error.message });
+      }
+
+      const updated = await updateApplicationStatus(application.id, 'Approved', approvalDate, memberId);
 
       const subject = `[AICAIML] Membership Application Approved - ${application.membership_no}`;
+      const baseUrl = process.env.BASE_URL || 'https://www.aic-aiml.org';
+      const setPasswordLink = `${baseUrl}/#set-password?token=${encodeURIComponent(rawSetupToken)}`;
+
       let emailBody = `Dear ${name},
 
 Congratulations! Your application for AICAIML ${application.category.toUpperCase()} membership has been reviewed and approved by the Membership Board.
 
 APPROVAL DETAILS:
-- Membership ID: ${application.membership_no}
+    - Membership ID: ${memberId}
 - Application ID: ${application.id}
 - Membership Type: ${application.category.toUpperCase()}
 - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}
 
-NEXT STEPS:
-1. Please use your Membership ID for all future correspondence with the Council.
-2. Access to member-only courses, events, and chapter activities will be enabled upon first login.`;
+    SECURE ACCOUNT SETUP:
+    1. Set your member portal password using the secure link below:
+    ${setPasswordLink}
+    2. This link expires in 48 hours for your account security.
+    3. After setting your password, sign in at: ${baseUrl}/#member-login
 
-      if (memberId && generatedPassword) {
-        emailBody += `
-
-SECURE MEMBER PORTAL CREDENTIALS:
-- Member ID / Username: ${memberId}
-- Password: ${generatedPassword}
-
-You can sign in at: ${process.env.BASE_URL || 'https://www.aic-aiml.org'}/#login
-
-Please keep these credentials secure and do not share them with anyone.
-You may change your password after your first login.`;
-      } else if (existingUser) {
-        emailBody += `
-
-1. Your existing member portal account (linked to this email) is now active. You can sign in at: ${process.env.BASE_URL || 'https://www.aic-aiml.org'}/#login`;
-      } else {
-        emailBody += `
-
-1. Your digital membership certificate and secure member portal login credentials will be issued shortly to this email address.`;
-      }
+    Please keep your credentials secure and do not share them with anyone.`;
 
       emailBody += `
 
@@ -549,7 +871,7 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
       res.json({
         success: true,
         application: updated,
-        credentials: memberId && generatedPassword ? { memberId, password: generatedPassword } : null
+        credentials: { memberId, setupLinkSent: true }
       });
     } catch (err: any) {
       console.error('Approve application error:', err);

@@ -45,7 +45,9 @@ function toPublicUser(row) {
     email: row.email,
     role: row.role,
     membershipPlan: row.membership_plan,
+    membershipNo: row.membership_no || null,
     membershipStatus: row.membership_status,
+    mustResetPassword: Boolean(row.must_reset_password),
     permissions: Array.isArray(row.permissions) ? row.permissions : (() => { try { return JSON.parse(row.permissions || '[]'); } catch { return []; } })()
   };
 }

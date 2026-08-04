@@ -27,6 +27,9 @@ const Learners = lazy(() => import('./pages/Learners'));
 const EventsProjects = lazy(() => import('./pages/EventsProjects'));
 const Benefits = lazy(() => import('./pages/Benefits'));
 const Login = lazy(() => import('./pages/Login'));
+const MemberLogin = lazy(() => import('./pages/MemberLogin'));
+const MemberDashboard = lazy(() => import('./pages/MemberDashboard'));
+const SetPassword = lazy(() => import('./pages/SetPassword'));
 const Legal = lazy(() => import('./pages/Legal'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const MembershipForms = lazy(() => import('./components/MembershipForms'));
@@ -54,6 +57,7 @@ function AppShell() {
   const [selectedCategory, setSelectedCategory] = useState<'student' | 'msme' | 'corporate' | 'school' | 'university' | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<string | null>(null);
+  const [setPasswordToken, setSetPasswordToken] = useState('');
 
   // Modal States
   const [isDonationOpen, setIsDonationOpen] = useState(false);
@@ -195,12 +199,17 @@ function AppShell() {
   // Read hash fragment for back-links from components
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '');
-      if (hash && ['home', 'know-aicaiml', 'courses', 'learners', 'events-projects', 'membership', 'login', 'verification', 'contact', 'privacy', 'terms', 'benefits-view'].includes(hash)) {
-        setCurrentPage(hash);
+      const rawHash = window.location.hash.replace('#', '');
+      const [hashPath, hashQuery = ''] = rawHash.split('?');
+      if (hashPath && ['home', 'know-aicaiml', 'courses', 'learners', 'events-projects', 'membership', 'login', 'member-login', 'member-dashboard', 'set-password', 'verification', 'contact', 'privacy', 'terms', 'benefits-view'].includes(hashPath)) {
+        setCurrentPage(hashPath);
+        if (hashPath === 'set-password') {
+          const params = new URLSearchParams(hashQuery);
+          setSetPasswordToken(params.get('token') || '');
+        }
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
-      if (hash === 'admin') {
+      if (hashPath === 'admin') {
         setCurrentPage('admin');
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
@@ -428,6 +437,54 @@ function AppShell() {
                   redirectAfterLogin={redirectAfterLogin}
                 />
               </Suspense>
+            )}
+
+            {currentPage === 'member-login' && (
+              <Suspense fallback={<RouteFallback />}>
+                <MemberLogin
+                  setCurrentPage={setCurrentPage}
+                  redirectAfterLogin={redirectAfterLogin}
+                />
+              </Suspense>
+            )}
+
+            {currentPage === 'set-password' && (
+              <Suspense fallback={<RouteFallback />}>
+                <SetPassword
+                  tokenFromHash={setPasswordToken}
+                  onSuccess={() => setCurrentPage('member-login')}
+                />
+              </Suspense>
+            )}
+
+            {currentPage === 'member-dashboard' && user?.role === 'member' && (
+              <Suspense fallback={<RouteFallback />}>
+                <MemberDashboard onGoToMemberLogin={() => setCurrentPage('member-login')} />
+              </Suspense>
+            )}
+
+            {currentPage === 'member-dashboard' && !user?.role && (
+              <Suspense fallback={<RouteFallback />}>
+                <MemberLogin
+                  setCurrentPage={setCurrentPage}
+                  redirectAfterLogin="member-dashboard"
+                />
+              </Suspense>
+            )}
+
+            {currentPage === 'member-dashboard' && user?.role && user.role !== 'member' && (
+              <div className="min-h-[55vh] px-4 py-12 bg-slate-50 flex items-center justify-center">
+                <div className="max-w-md w-full bg-white border border-slate-200 rounded-xl p-6 text-center space-y-3">
+                  <h2 className="text-xl font-bold text-navy">Member Dashboard Access</h2>
+                  <p className="text-sm text-slate-600">This dashboard is available only for approved member accounts.</p>
+                  <button
+                    onClick={() => setCurrentPage('home')}
+                    className="px-4 py-2 rounded-md bg-corp-blue text-white text-sm font-semibold"
+                  >
+                    Back to Home
+                  </button>
+                </div>
+              </div>
             )}
 
              {currentPage === 'admin' && user?.role === 'admin' && (

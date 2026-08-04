@@ -6,7 +6,9 @@ export interface AuthUser {
   email: string;
   role: string;
   membershipPlan: string | null;
+  membershipNo?: string | null;
   membershipStatus: string;
+  mustResetPassword?: boolean;
   permissions: string[];
 }
 
@@ -14,6 +16,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  memberLogin: (identifier: string, password: string) => Promise<{ success: boolean; error?: string; code?: string; status?: string }>;
   logout: () => Promise<void>;
   hasPremiumAccess: boolean;
 }
@@ -87,10 +90,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const memberLogin = async (identifier: string, password: string) => {
+    try {
+      const res = await fetch('/api/auth/member/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ identifier, password })
+      });
+
+      const text = await res.text();
+      let data: any = {};
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = {};
+        }
+      }
+
+      if (!res.ok) {
+        return {
+          success: false,
+          error: data?.error || data?.message || `Login failed (${res.status}).`,
+          code: data?.code,
+          status: data?.status
+        };
+      }
+
+      setUser(data.user);
+      return { success: true };
+    } catch {
+      return { success: false, error: 'Unable to reach the server. Please try again.' };
+    }
+  };
+
   const hasPremiumAccess = !!user && (user.role === 'admin' || user.membershipStatus === 'active');
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, hasPremiumAccess }}>
+    <AuthContext.Provider value={{ user, loading, login, memberLogin, logout, hasPremiumAccess }}>
       {children}
     </AuthContext.Provider>
   );
