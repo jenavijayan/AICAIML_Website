@@ -40,6 +40,12 @@ function json(res, statusCode, obj) {
   res.status(statusCode).json(obj);
 }
 
+function failIfSupabaseError(result, context) {
+  if (result && result.error) {
+    throw new Error(`${context}: ${result.error.message}`);
+  }
+}
+
 async function handleOverview(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
@@ -60,6 +66,17 @@ async function handleOverview(req, res) {
     supabase.from('news').select('*', { count: 'exact', head: true })
   ]);
 
+  failIfSupabaseError(enquiriesRes, 'Failed to query enquiries overview');
+  failIfSupabaseError(applicationsRes, 'Failed to query applications overview');
+  failIfSupabaseError(eventRegsRes, 'Failed to query event registrations overview');
+  failIfSupabaseError(membershipsRes, 'Failed to query memberships overview');
+  failIfSupabaseError(usersRes, 'Failed to query users overview');
+  failIfSupabaseError(coursesRes, 'Failed to query courses overview');
+  failIfSupabaseError(projectsRes, 'Failed to query projects overview');
+  failIfSupabaseError(partnersRes, 'Failed to query partners overview');
+  failIfSupabaseError(testimonialsRes, 'Failed to query testimonials overview');
+  failIfSupabaseError(newsRes, 'Failed to query news overview');
+
   json(res, 200, {
     enquiries: enquiriesRes.count || 0,
     applications: applicationsRes.count || 0,
@@ -77,14 +94,16 @@ async function handleOverview(req, res) {
 async function handleEnquiries(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
-  const { data } = await supabase.from('enquiries').select('*').order('submitted_at', { ascending: false });
+  const { data, error } = await supabase.from('enquiries').select('*').order('submitted_at', { ascending: false });
+  if (error) return json(res, 500, { error: `Failed to load enquiries: ${error.message}` });
   json(res, 200, data || []);
 }
 
 async function handleApplications(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
-  const { data } = await supabase.from('applications').select('*').order('submitted_at', { ascending: false });
+  const { data, error } = await supabase.from('applications').select('*').order('submitted_at', { ascending: false });
+  if (error) return json(res, 500, { error: `Failed to load applications: ${error.message}` });
   json(res, 200, data || []);
 }
 
@@ -218,21 +237,24 @@ async function handleRejectApplication(req, res, id) {
 async function handleEventRegistrations(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
-  const { data } = await supabase.from('event_registrations').select('*').order('registered_at', { ascending: false });
+  const { data, error } = await supabase.from('event_registrations').select('*').order('registered_at', { ascending: false });
+  if (error) return json(res, 500, { error: `Failed to load event registrations: ${error.message}` });
   json(res, 200, data || []);
 }
 
 async function handleMemberships(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
-  const { data } = await supabase.from('memberships').select('*').order('paid_at', { ascending: false });
+  const { data, error } = await supabase.from('memberships').select('*').order('paid_at', { ascending: false });
+  if (error) return json(res, 500, { error: `Failed to load memberships: ${error.message}` });
   json(res, 200, data || []);
 }
 
 async function handleUsers(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
-  const { data } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+  const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+  if (error) return json(res, 500, { error: `Failed to load users: ${error.message}` });
   const safe = (data || []).map((u) => {
     const { password_hash, password_salt, ...rest } = u;
     let permissions = rest.permissions;
@@ -246,6 +268,30 @@ async function handleUsers(req, res) {
     };
   });
   json(res, 200, safe);
+}
+
+async function handleDiagnostics(req, res) {
+  const admin = await getAdminUser(req);
+  if (!admin) return json(res, 401, { error: 'Admin access required.' });
+
+  const projectUrl = (process.env.SUPABASE_URL || '').trim();
+  const projectRef = projectUrl ? projectUrl.replace(/^https?:\/\//, '').split('.')[0] : 'missing';
+
+  const [applicationsRes, usersRes, membershipsRes] = await Promise.all([
+    supabase.from('applications').select('*', { count: 'exact', head: true }),
+    supabase.from('users').select('*', { count: 'exact', head: true }),
+    supabase.from('memberships').select('*', { count: 'exact', head: true })
+  ]);
+
+  return json(res, 200, {
+    supabaseEnabled: SUPABASE_ENABLED,
+    projectRef,
+    tables: {
+      applications: { count: applicationsRes.count || 0, error: applicationsRes.error?.message || null },
+      users: { count: usersRes.count || 0, error: usersRes.error?.message || null },
+      memberships: { count: membershipsRes.count || 0, error: membershipsRes.error?.message || null }
+    }
+  });
 }
 
 async function handleCreateUser(req, res) {
@@ -565,6 +611,11 @@ export default async function handler(req, res) {
     if (segments[0] === 'users') {
       if (req.method === 'GET') return handleUsers(req, res);
       if (req.method === 'POST') return handleCreateUser(req, res);
+      return json(res, 405, { error: 'Method not allowed.' });
+    }
+
+    if (segments[0] === 'diagnostics') {
+      if (req.method === 'GET') return handleDiagnostics(req, res);
       return json(res, 405, { error: 'Method not allowed.' });
     }
 
