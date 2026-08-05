@@ -2,9 +2,11 @@ import {
   SESSION_COOKIE,
   FALLBACK_AUTH_EMAIL,
   FALLBACK_AUTH_PASSWORD,
+  FALLBACK_USER_ID,
   getFallbackUser,
   getSupabaseUser,
   createSupabaseSession,
+  createSignedSessionToken,
   seedDevUser,
   parseJsonBody,
   hashPassword
@@ -21,6 +23,25 @@ function canAttemptBootstrapAdminRepair(email, password) {
 function isMissingColumnError(error, columnName) {
   if (!error) return false;
   return String(error.message || '').toLowerCase().includes(String(columnName || '').toLowerCase());
+}
+
+function buildBootstrapAdminUser() {
+  return {
+    id: FALLBACK_USER_ID || 'user-dev-001',
+    name: 'Admin User',
+    email: String(FALLBACK_AUTH_EMAIL || '').trim().toLowerCase(),
+    role: 'admin',
+    membershipPlan: 'Premium',
+    membershipStatus: 'active',
+    permissions: [
+      'access_premium_courses',
+      'access_course_videos',
+      'access_downloadable_resources',
+      'access_quizzes',
+      'access_certificates',
+      'access_members_only_pages'
+    ]
+  };
 }
 
 async function repairBootstrapAdminPassword(email, password) {
@@ -90,6 +111,16 @@ export default async function handler(req, res) {
     }
     if (!user) {
       user = getFallbackUser(email, password);
+    }
+    if (!user && canAttemptBootstrapAdminRepair(email, password)) {
+      // Break-glass path for deployments where database auth state is inconsistent.
+      // This is restricted to the configured bootstrap admin credentials only.
+      user = buildBootstrapAdminUser();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toUTCString();
+      const token = createSignedSessionToken(user);
+      const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+      res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; HttpOnly; Path=/; Expires=${expiresAt}; SameSite=Lax${secure}`);
+      return res.status(200).json({ success: true, user, warning: 'Signed fallback session issued due auth store inconsistency.' });
     }
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password.' });
