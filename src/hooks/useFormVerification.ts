@@ -22,6 +22,16 @@ export function useFormVerification({ email, onVerified }: UseFormVerificationOp
   const [message, setMessage] = useState<string | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
 
+  function toFriendlyError(err: any, fallback: string) {
+    const name = String(err?.name || '');
+    const message = String(err?.message || '');
+    const lowered = message.toLowerCase();
+    if (name === 'AbortError' || lowered.includes('aborted')) {
+      return 'Request timed out. Please check your connection and try again.';
+    }
+    return message || fallback;
+  }
+
   async function parseApiResponse(res: Response) {
     const text = await res.text();
     if (!text) return {} as any;
@@ -38,16 +48,16 @@ export function useFormVerification({ email, onVerified }: UseFormVerificationOp
     if (step === 'requesting') return false;
     setStep('requesting');
     setMessage(null);
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      timeoutId = setTimeout(() => controller.abort(), 30000);
       const res = await fetch('/api/verification/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim() }),
         signal: controller.signal
       });
-      clearTimeout(timeoutId);
       const data = await parseApiResponse(res);
       if (!res.ok) {
         throw new Error(data.error || 'Failed to send verification code.');
@@ -55,9 +65,11 @@ export function useFormVerification({ email, onVerified }: UseFormVerificationOp
       setStep('verifying');
       return true;
     } catch (err: any) {
-      setMessage(err.message || 'Failed to send verification code.');
+      setMessage(toFriendlyError(err, 'Failed to send verification code.'));
       setStep('error');
       return false;
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }, [email, step]);
 
@@ -69,16 +81,16 @@ export function useFormVerification({ email, onVerified }: UseFormVerificationOp
     setStep('verifying');
     setIsConfirming(true);
     setMessage(null);
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      timeoutId = setTimeout(() => controller.abort(), 30000);
       const res = await fetch('/api/verification/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), code: verificationCode.trim() }),
         signal: controller.signal
       });
-      clearTimeout(timeoutId);
       const data = await parseApiResponse(res);
       if (!res.ok) {
         throw new Error(data.error || 'Invalid verification code.');
@@ -87,10 +99,11 @@ export function useFormVerification({ email, onVerified }: UseFormVerificationOp
       onVerified?.();
       return true;
     } catch (err: any) {
-      setMessage(err.message || 'Verification failed.');
+      setMessage(toFriendlyError(err, 'Verification failed.'));
       setStep('verifying');
       return false;
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setIsConfirming(false);
     }
   }, [email, verificationCode, onVerified]);

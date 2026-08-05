@@ -101,6 +101,58 @@ function rowCountError(context, rows) {
   return error;
 }
 
+function normalizePublicBaseUrl(raw) {
+  if (!raw) return null;
+  let input = String(raw).trim();
+  if (!input) return null;
+
+  if (!/^https?:\/\//i.test(input)) {
+    input = `https://${input}`;
+  }
+
+  try {
+    const url = new URL(input);
+    if (url.hostname.toLowerCase() === 'www.aic-aiml.org') {
+      url.hostname = 'aic-aiml.org';
+    }
+    url.hash = '';
+    url.search = '';
+    url.pathname = '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+}
+
+function resolvePublicBaseUrl(req, logStep) {
+  const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
+  const forwardedHost = String(req?.headers?.['x-forwarded-host'] || '').split(',')[0].trim();
+
+  const candidates = [
+    { source: 'BASE_URL', value: process.env.BASE_URL },
+    { source: 'PUBLIC_BASE_URL', value: process.env.PUBLIC_BASE_URL },
+    { source: 'APP_BASE_URL', value: process.env.APP_BASE_URL },
+    { source: 'VITE_APP_BASE_URL', value: process.env.VITE_APP_BASE_URL },
+    { source: 'VERCEL_URL', value: process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '' },
+    { source: 'request.origin', value: req?.headers?.origin || '' },
+    { source: 'request.forwarded', value: (forwardedProto && forwardedHost) ? `${forwardedProto}://${forwardedHost}` : '' },
+    { source: 'request.host', value: req?.headers?.host ? `https://${req.headers.host}` : '' },
+    { source: 'default', value: 'https://aic-aiml.org' }
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizePublicBaseUrl(candidate.value);
+    if (normalized) {
+      logStep?.('config.base_url.resolved', { source: candidate.source, baseUrl: normalized });
+      return normalized;
+    }
+  }
+
+  const fallback = 'https://aic-aiml.org';
+  logStep?.('config.base_url.fallback', { baseUrl: fallback });
+  return fallback;
+}
+
 async function selectWithOrderFallback(table, primaryOrderColumn) {
   let result = await supabase.from(table).select('*').order(primaryOrderColumn, { ascending: false });
   if (!result.error) return result;
@@ -692,7 +744,7 @@ async function handleApproveApplication(req, res, id) {
       throw new Error(`Application update failed: ${updateResult.error.message}`);
     }
 
-    const baseUrl = process.env.BASE_URL || 'https://www.aic-aiml.org';
+    const baseUrl = resolvePublicBaseUrl(req, logStep);
     const setPasswordLink = setup.mode === 'setup_link'
       ? `${baseUrl}/#set-password?token=${encodeURIComponent(setup.rawToken)}`
       : null;
