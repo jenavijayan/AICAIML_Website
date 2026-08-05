@@ -8,6 +8,7 @@ const state: {
   duplicateUsers: AnyRow[];
   usersMaybeSingleDuplicateError: boolean;
   usersMembershipNoMissing: boolean;
+  usersUpdateReturnsNoRows: boolean;
   usersUpdateCalls: Array<{ payload: AnyRow; id: string }>;
   usersDeleteCalls: Array<{ id: string }>;
   applicationsUpdateCalls: Array<{ payload: AnyRow; id: string }>;
@@ -18,6 +19,7 @@ const state: {
   duplicateUsers: [],
   usersMaybeSingleDuplicateError: false,
   usersMembershipNoMissing: false,
+  usersUpdateReturnsNoRows: false,
   usersUpdateCalls: [],
   usersDeleteCalls: [],
   applicationsUpdateCalls: [],
@@ -117,6 +119,10 @@ function createSupabaseMock() {
                   return { data: null, error: missingColumnError('password_reset_expires_at') };
                 }
 
+                if (state.usersUpdateReturnsNoRows) {
+                  return { data: [], error: null };
+                }
+
                 return { data: [{ ...(state.existingUser || {}), id, ...payload }], error: null };
               }
             })
@@ -193,6 +199,7 @@ describe('admin approve route compatibility', () => {
     state.duplicateUsers = [];
     state.usersMaybeSingleDuplicateError = false;
     state.usersMembershipNoMissing = false;
+    state.usersUpdateReturnsNoRows = false;
     state.usersUpdateCalls = [];
     state.usersDeleteCalls = [];
     state.applicationsUpdateCalls = [];
@@ -380,5 +387,23 @@ describe('admin approve route compatibility', () => {
     expect(res.payload?.success).toBe(true);
     const touchedDuplicate = state.usersUpdateCalls.some((call) => call.id === 'dup-user-2' || call.id === 'dup-user-1');
     expect(touchedDuplicate).toBe(true);
+  });
+
+  it('approves successfully when users update returns zero representation rows', async () => {
+    state.usersUpdateReturnsNoRows = true;
+
+    const { default: handler } = await import('../server-lib/api-routes/admin/[[...path]].js');
+    const req: any = {
+      method: 'POST',
+      query: { path: ['applications', 'app-1', 'approve'] },
+      headers: { cookie: 'aicaiml_session=session-token' }
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload?.success).toBe(true);
+    expect(res.payload?.credentials?.memberId).toMatch(/^AICAIML-\d{4}-\d{4}$/);
   });
 });

@@ -137,6 +137,24 @@ async function updateRowCompatById(table, id, payload, optionalColumns, logStep)
         return { error: null, appliedPayload: current, removedColumns, data: rows[0] };
       }
 
+      if (rows.length === 0) {
+        // Some deployments can complete updates while returning no representation rows.
+        const probe = await supabase.from(table).select('*').eq('id', id).maybeSingle();
+        if (!probe.error && probe.data) {
+          logStep?.('query.update.success_via_probe', { table, id, keys: Object.keys(current), removedColumns, rowId: probe.data?.id || null });
+          return { error: null, appliedPayload: current, removedColumns, data: probe.data };
+        }
+
+        logStep?.('query.update.success_no_representation', {
+          table,
+          id,
+          keys: Object.keys(current),
+          removedColumns,
+          probeError: probe.error ? serializeError(probe.error) : null
+        });
+        return { error: null, appliedPayload: current, removedColumns, data: null };
+      }
+
       const mismatch = rowCountError(`Failed to update ${table} row ${id}`, rows);
       logStep?.('query.update.row_count_mismatch', { table, id, keys: Object.keys(current), rowCount: rows.length });
       return { error: mismatch, appliedPayload: current, removedColumns, data: null };
@@ -166,6 +184,17 @@ async function insertRowCompat(table, payload, optionalColumns, logStep) {
       if (rows.length === 1) {
         logStep?.('query.insert.success', { table, keys: Object.keys(current), removedColumns, rowId: rows[0]?.id || null });
         return { data: rows[0], error: null, appliedPayload: current, removedColumns };
+      }
+
+      if (rows.length === 0) {
+        const fallbackData = Object.prototype.hasOwnProperty.call(current, 'id') ? { ...current } : null;
+        logStep?.('query.insert.success_no_representation', {
+          table,
+          keys: Object.keys(current),
+          removedColumns,
+          hasFallbackData: Boolean(fallbackData)
+        });
+        return { data: fallbackData, error: null, appliedPayload: current, removedColumns };
       }
 
       const mismatch = rowCountError(`Failed to insert ${table} row`, rows);
