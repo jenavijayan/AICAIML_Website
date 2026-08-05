@@ -55,20 +55,18 @@ function createSupabaseMock() {
           }),
           update: (payload: AnyRow) => ({
             eq: (_column: string, id: string) => ({
-              select: () => ({
-                single: async () => {
-                  state.applicationsUpdateCalls.push({ payload, id });
+              select: async () => {
+                state.applicationsUpdateCalls.push({ payload, id });
 
-                  if (Object.prototype.hasOwnProperty.call(payload, 'rejection_reason')) {
-                    return { data: null, error: { message: "Could not find the 'rejection_reason' column of 'applications' in the schema cache", code: 'PGRST204' } };
-                  }
-
-                  if (state.failApplicationUpdate) {
-                    return { data: null, error: { message: 'applications update failed' } };
-                  }
-                  return { data: { id, ...payload }, error: null };
+                if (Object.prototype.hasOwnProperty.call(payload, 'rejection_reason')) {
+                  return { data: null, error: { message: "Could not find the 'rejection_reason' column of 'applications' in the schema cache", code: 'PGRST204' } };
                 }
-              })
+
+                if (state.failApplicationUpdate) {
+                  return { data: null, error: { message: 'applications update failed' } };
+                }
+                return { data: [{ id, ...payload }], error: null };
+              }
             })
           })
         };
@@ -100,31 +98,27 @@ function createSupabaseMock() {
             }
           }),
           insert: (payload: AnyRow) => ({
-            select: () => ({
-              single: async () => {
-                if (state.usersMembershipNoMissing && Object.prototype.hasOwnProperty.call(payload, 'membership_no')) {
-                  return { data: null, error: { message: "column users.membership_no does not exist", code: '42703' } };
-                }
-                return { data: { ...payload }, error: null };
+            select: async () => {
+              if (state.usersMembershipNoMissing && Object.prototype.hasOwnProperty.call(payload, 'membership_no')) {
+                return { data: null, error: { message: "column users.membership_no does not exist", code: '42703' } };
               }
-            })
+              return { data: [{ ...payload }], error: null };
+            }
           }),
           update: (payload: AnyRow) => ({
             eq: (_column: string, id: string) => ({
-              select: () => ({
-                single: async () => {
-                  state.usersUpdateCalls.push({ payload, id });
+              select: async () => {
+                state.usersUpdateCalls.push({ payload, id });
 
-                  if (Object.prototype.hasOwnProperty.call(payload, 'password_reset_token')) {
-                    return { data: null, error: missingColumnError('password_reset_token') };
-                  }
-                  if (Object.prototype.hasOwnProperty.call(payload, 'password_reset_expires_at')) {
-                    return { data: null, error: missingColumnError('password_reset_expires_at') };
-                  }
-
-                  return { data: { ...(state.existingUser || {}), id, ...payload }, error: null };
+                if (Object.prototype.hasOwnProperty.call(payload, 'password_reset_token')) {
+                  return { data: null, error: missingColumnError('password_reset_token') };
                 }
-              })
+                if (Object.prototype.hasOwnProperty.call(payload, 'password_reset_expires_at')) {
+                  return { data: null, error: missingColumnError('password_reset_expires_at') };
+                }
+
+                return { data: [{ ...(state.existingUser || {}), id, ...payload }], error: null };
+              }
             })
           }),
           delete: () => ({

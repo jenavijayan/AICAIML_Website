@@ -93,6 +93,14 @@ function isDuplicateRowsError(error) {
   ) || error.code === 'PGRST116';
 }
 
+function rowCountError(context, rows) {
+  const count = Array.isArray(rows) ? rows.length : 0;
+  const error = new Error(`${context}: expected exactly 1 row, got ${count}`);
+  error.code = 'ROW_COUNT_MISMATCH';
+  error.details = { rowCount: count };
+  return error;
+}
+
 async function selectWithOrderFallback(table, primaryOrderColumn) {
   let result = await supabase.from(table).select('*').order(primaryOrderColumn, { ascending: false });
   if (!result.error) return result;
@@ -121,10 +129,17 @@ async function updateRowCompatById(table, id, payload, optionalColumns, logStep)
 
   while (true) {
     logStep?.('query.update.start', { table, id, keys: Object.keys(current) });
-    const result = await supabase.from(table).update(current).eq('id', id).select('*').single();
+    const result = await supabase.from(table).update(current).eq('id', id).select('*');
     if (!result.error) {
-      logStep?.('query.update.success', { table, id, keys: Object.keys(current), removedColumns, rowId: result.data?.id || null });
-      return { error: null, appliedPayload: current, removedColumns, data: result.data };
+      const rows = Array.isArray(result.data) ? result.data : [];
+      if (rows.length === 1) {
+        logStep?.('query.update.success', { table, id, keys: Object.keys(current), removedColumns, rowId: rows[0]?.id || null });
+        return { error: null, appliedPayload: current, removedColumns, data: rows[0] };
+      }
+
+      const mismatch = rowCountError(`Failed to update ${table} row ${id}`, rows);
+      logStep?.('query.update.row_count_mismatch', { table, id, keys: Object.keys(current), rowCount: rows.length });
+      return { error: mismatch, appliedPayload: current, removedColumns, data: null };
     }
 
     logStep?.('query.update.error', { table, id, error: serializeError(result.error), keys: Object.keys(current) });
@@ -145,10 +160,17 @@ async function insertRowCompat(table, payload, optionalColumns, logStep) {
 
   while (true) {
     logStep?.('query.insert.start', { table, keys: Object.keys(current) });
-    const result = await supabase.from(table).insert(current).select('*').single();
+    const result = await supabase.from(table).insert(current).select('*');
     if (!result.error) {
-      logStep?.('query.insert.success', { table, keys: Object.keys(current), removedColumns, rowId: result.data?.id || null });
-      return { data: result.data, error: null, appliedPayload: current, removedColumns };
+      const rows = Array.isArray(result.data) ? result.data : [];
+      if (rows.length === 1) {
+        logStep?.('query.insert.success', { table, keys: Object.keys(current), removedColumns, rowId: rows[0]?.id || null });
+        return { data: rows[0], error: null, appliedPayload: current, removedColumns };
+      }
+
+      const mismatch = rowCountError(`Failed to insert ${table} row`, rows);
+      logStep?.('query.insert.row_count_mismatch', { table, keys: Object.keys(current), rowCount: rows.length });
+      return { data: null, error: mismatch, appliedPayload: current, removedColumns };
     }
 
     logStep?.('query.insert.error', { table, error: serializeError(result.error), keys: Object.keys(current) });
