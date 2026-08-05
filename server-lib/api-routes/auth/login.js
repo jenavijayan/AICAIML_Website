@@ -16,6 +16,12 @@ export default async function handler(req, res) {
 
     let user = await getSupabaseUser(email, password);
     if (!user) {
+      // If the deployment has Supabase enabled but the default admin row was
+      // never seeded, try a one-time seed and retry before failing auth.
+      await seedDevUser();
+      user = await getSupabaseUser(email, password);
+    }
+    if (!user) {
       user = getFallbackUser(email, password);
     }
     if (!user) {
