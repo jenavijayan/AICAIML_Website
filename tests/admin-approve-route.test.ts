@@ -50,18 +50,22 @@ function createSupabaseMock() {
             like: async () => ({ data: [], error: null })
           }),
           update: (payload: AnyRow) => ({
-            eq: async (_column: string, id: string) => {
-              state.applicationsUpdateCalls.push({ payload, id });
+            eq: (_column: string, id: string) => ({
+              select: () => ({
+                single: async () => {
+                  state.applicationsUpdateCalls.push({ payload, id });
 
-              if (Object.prototype.hasOwnProperty.call(payload, 'rejection_reason')) {
-                return { error: { message: "Could not find the 'rejection_reason' column of 'applications' in the schema cache", code: 'PGRST204' } };
-              }
+                  if (Object.prototype.hasOwnProperty.call(payload, 'rejection_reason')) {
+                    return { data: null, error: { message: "Could not find the 'rejection_reason' column of 'applications' in the schema cache", code: 'PGRST204' } };
+                  }
 
-              if (state.failApplicationUpdate) {
-                return { error: { message: 'applications update failed' } };
-              }
-              return { error: null };
-            }
+                  if (state.failApplicationUpdate) {
+                    return { data: null, error: { message: 'applications update failed' } };
+                  }
+                  return { data: { id, ...payload }, error: null };
+                }
+              })
+            })
           })
         };
       }
@@ -95,22 +99,22 @@ function createSupabaseMock() {
             })
           }),
           update: (payload: AnyRow) => ({
-            eq: (column: string, id: string) => {
-              state.usersUpdateCalls.push({ payload, id });
+            eq: (_column: string, id: string) => ({
+              select: () => ({
+                single: async () => {
+                  state.usersUpdateCalls.push({ payload, id });
 
-              if (Object.prototype.hasOwnProperty.call(payload, 'password_reset_token')) {
-                return Promise.resolve({ error: missingColumnError('password_reset_token') });
-              }
-              if (Object.prototype.hasOwnProperty.call(payload, 'password_reset_expires_at')) {
-                return Promise.resolve({ error: missingColumnError('password_reset_expires_at') });
-              }
+                  if (Object.prototype.hasOwnProperty.call(payload, 'password_reset_token')) {
+                    return { data: null, error: missingColumnError('password_reset_token') };
+                  }
+                  if (Object.prototype.hasOwnProperty.call(payload, 'password_reset_expires_at')) {
+                    return { data: null, error: missingColumnError('password_reset_expires_at') };
+                  }
 
-              if (column === 'id') {
-                return Promise.resolve({ error: null, data: { ...state.existingUser, ...payload } });
-              }
-
-              return Promise.resolve({ error: null });
-            }
+                  return { data: { ...(state.existingUser || {}), id, ...payload }, error: null };
+                }
+              })
+            })
           }),
           delete: () => ({
             eq: async (_column: string, id: string) => {
@@ -287,6 +291,33 @@ describe('admin approve route compatibility', () => {
 
   it('approves successfully when users.membership_no column is missing', async () => {
     state.usersMembershipNoMissing = true;
+
+    const { default: handler } = await import('../server-lib/api-routes/admin/[[...path]].js');
+    const req: any = {
+      method: 'POST',
+      query: { path: ['applications', 'app-1', 'approve'] },
+      headers: { cookie: 'aicaiml_session=session-token' }
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload?.success).toBe(true);
+    expect(res.payload?.credentials?.memberId).toMatch(/^AICAIML-\d{4}-\d{4}$/);
+  });
+
+  it('approves successfully when member user already exists', async () => {
+    state.existingUser = {
+      id: 'user-existing-1',
+      email: 'jena@example.com',
+      name: 'Jena Existing',
+      role: 'member',
+      membership_status: 'active',
+      password_hash: 'abc',
+      password_salt: 'def',
+      membership_no: null
+    };
 
     const { default: handler } = await import('../server-lib/api-routes/admin/[[...path]].js');
     const req: any = {

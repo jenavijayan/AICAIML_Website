@@ -113,16 +113,16 @@ async function updateRowCompatById(table, id, payload, optionalColumns, logStep)
 
   while (true) {
     logStep?.('query.update.start', { table, id, keys: Object.keys(current) });
-    const result = await supabase.from(table).update(current).eq('id', id);
+    const result = await supabase.from(table).update(current).eq('id', id).select('*').single();
     if (!result.error) {
-      logStep?.('query.update.success', { table, id, keys: Object.keys(current), removedColumns });
-      return { error: null, appliedPayload: current, removedColumns };
+      logStep?.('query.update.success', { table, id, keys: Object.keys(current), removedColumns, rowId: result.data?.id || null });
+      return { error: null, appliedPayload: current, removedColumns, data: result.data };
     }
 
     logStep?.('query.update.error', { table, id, error: serializeError(result.error), keys: Object.keys(current) });
     const missingOptional = optionalColumns.find((col) => Object.prototype.hasOwnProperty.call(current, col) && errorMentionsColumn(result.error, col));
     if (!missingOptional) {
-      return { error: result.error, appliedPayload: current, removedColumns };
+      return { error: result.error, appliedPayload: current, removedColumns, data: null };
     }
 
     delete current[missingOptional];
@@ -346,7 +346,7 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
     logStep?.('query.users.update_existing.result', { userId: existingUser.id, error: updateRes.error ? serializeError(updateRes.error) : null });
 
     if (!updateRes.error) {
-      existingUser = updateRes.data;
+      existingUser = updateRes.data || existingUser;
     }
   }
 
