@@ -18,16 +18,32 @@ function canAttemptBootstrapAdminRepair(email, password) {
   return normalizedEmail === String(FALLBACK_AUTH_EMAIL || '').trim().toLowerCase() && normalizedPassword === String(FALLBACK_AUTH_PASSWORD || '').trim();
 }
 
+function isMissingColumnError(error, columnName) {
+  if (!error) return false;
+  return String(error.message || '').toLowerCase().includes(String(columnName || '').toLowerCase());
+}
+
 async function repairBootstrapAdminPassword(email, password) {
   if (!SUPABASE_ENABLED || !supabase) return false;
 
   const normalizedEmail = String(email || '').trim().toLowerCase();
-  const { data: rows, error } = await supabase
+  let query = await supabase
     .from('users')
     .select('id, role')
     .eq('email', normalizedEmail)
     .order('created_at', { ascending: false })
     .limit(20);
+
+  if (query.error && isMissingColumnError(query.error, 'created_at')) {
+    query = await supabase
+      .from('users')
+      .select('id, role')
+      .eq('email', normalizedEmail)
+      .limit(20);
+  }
+
+  const rows = query.data;
+  const error = query.error;
   if (error || !Array.isArray(rows) || rows.length === 0) return false;
 
   const adminIds = rows

@@ -58,6 +58,31 @@ function verifySignedSessionToken(token: string): PublicUser | null {
   }
 }
 
+function isMissingColumnError(error: any, columnName: string) {
+  if (!error) return false;
+  return String(error.message || '').toLowerCase().includes(columnName.toLowerCase());
+}
+
+async function getUsersByEmailRows(email: string) {
+  const normalizedEmail = email.toLowerCase().trim();
+  let query = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', normalizedEmail)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (query.error && isMissingColumnError(query.error, 'created_at')) {
+    query = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', normalizedEmail)
+      .limit(20);
+  }
+
+  return query;
+}
+
 // Supabase-backed data access layer. All functions return Promises, so
 // callers in server.ts must await them.
 
@@ -554,13 +579,7 @@ export async function verifyCredentials(email: string, password: string): Promis
     return getFallbackUser(email, password) || null;
   }
 
-  const normalizedEmail = email.toLowerCase().trim();
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('email', normalizedEmail)
-    .order('created_at', { ascending: false })
-    .limit(10);
+  const { data, error } = await getUsersByEmailRows(email);
 
   if (error || !Array.isArray(data) || data.length === 0) {
     // User not found in Supabase — fall back to dev credentials so the
@@ -667,12 +686,8 @@ export async function seedDevUser(): Promise<PublicUser> {
   const existingById = Array.isArray(byId) && byId.length > 0 ? byId[0] : null;
   if (existingById) return toPublicUser(existingById);
 
-  const { data: byEmailRows } = await supabase
-    .from('users')
-    .select('*')
-    .eq('email', 'vendhanftpwatch@gmail.com')
-    .order('created_at', { ascending: false })
-    .limit(20);
+  const byEmailQuery = await getUsersByEmailRows('vendhanftpwatch@gmail.com');
+  const byEmailRows = byEmailQuery.data;
 
   if (Array.isArray(byEmailRows) && byEmailRows.length > 0) {
     const target = byEmailRows.find((row) => String(row.role || '').toLowerCase() === 'admin') || byEmailRows[0];

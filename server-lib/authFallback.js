@@ -42,6 +42,31 @@ function verifyPassword(password, hash, salt) {
   return candidate.length === stored.length && crypto.timingSafeEqual(candidate, stored);
 }
 
+function isMissingColumnError(error, columnName) {
+  if (!error) return false;
+  return String(error.message || '').toLowerCase().includes(String(columnName || '').toLowerCase());
+}
+
+async function getUsersByEmail(email) {
+  const normalizedEmail = String(email || '').toLowerCase().trim();
+  let query = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', normalizedEmail)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (query.error && isMissingColumnError(query.error, 'created_at')) {
+    query = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', normalizedEmail)
+      .limit(20);
+  }
+
+  return query;
+}
+
 function toPublicUser(row) {
   return {
     id: row.id,
@@ -62,12 +87,8 @@ async function seedDevUser() {
   const existingById = Array.isArray(byId) && byId.length > 0 ? byId[0] : null;
   if (existingById) return toPublicUser(existingById);
 
-  const { data: byEmail } = await supabase
-    .from('users')
-    .select('*')
-    .eq('email', FALLBACK_AUTH_EMAIL)
-    .order('created_at', { ascending: false })
-    .limit(20);
+  const byEmailQuery = await getUsersByEmail(FALLBACK_AUTH_EMAIL);
+  const byEmail = byEmailQuery.data;
 
   if (Array.isArray(byEmail) && byEmail.length > 0) {
     const target = byEmail.find((row) => String(row.role || '').toLowerCase() === 'admin') || byEmail[0];
@@ -125,13 +146,7 @@ async function seedDevUser() {
 
 async function getSupabaseUser(email, password) {
   if (!SUPABASE_ENABLED || !supabase) return null;
-  const normalizedEmail = String(email || '').toLowerCase().trim();
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('email', normalizedEmail)
-    .order('created_at', { ascending: false })
-    .limit(10);
+  const { data, error } = await getUsersByEmail(email);
   if (error || !Array.isArray(data) || data.length === 0) return null;
 
   for (const row of data) {
