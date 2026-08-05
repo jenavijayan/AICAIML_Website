@@ -255,24 +255,30 @@ export default function MembershipForms({ category, onBack }: FormProps) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-      const formPayload = new FormData();
-      formPayload.append('category', category);
-      formPayload.append('formData', JSON.stringify(payload));
-      formPayload.append('honeypot', honeypot);
-      if (commonForm.documentFile) {
-        formPayload.append('document', commonForm.documentFile);
-      }
-
       const response = await fetch('/api/membership/submit', {
         method: 'POST',
-        body: formPayload,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category,
+          formData: payload,
+          honeypot
+        }),
         signal: controller.signal,
         credentials: 'include'
       });
 
       clearTimeout(timeoutId);
 
-      const resData = await response.json();
+      const raw = await response.text();
+      let resData: any = {};
+      if (raw) {
+        try {
+          resData = JSON.parse(raw);
+        } catch {
+          const snippet = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+          throw new Error(`Server returned an invalid response. ${snippet || 'Non-JSON body received.'}`);
+        }
+      }
       if (!response.ok) {
         throw new Error(resData.error || 'Failed to submit application.');
       }
