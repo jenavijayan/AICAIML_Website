@@ -85,10 +85,26 @@ async function seedDevUser() {
 
 async function getSupabaseUser(email, password) {
   if (!SUPABASE_ENABLED || !supabase) return null;
-  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase().trim()).single();
-  if (error || !data) return null;
-  if (!verifyPassword(password, data.password_hash, data.password_salt)) return null;
-  return toPublicUser(data);
+  const normalizedEmail = String(email || '').toLowerCase().trim();
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', normalizedEmail)
+    .order('created_at', { ascending: false })
+    .limit(10);
+  if (error || !Array.isArray(data) || data.length === 0) return null;
+
+  for (const row of data) {
+    try {
+      if (verifyPassword(password, row.password_hash, row.password_salt)) {
+        return toPublicUser(row);
+      }
+    } catch {
+      // Skip malformed legacy rows and continue searching valid candidates.
+    }
+  }
+
+  return null;
 }
 
 async function getSupabaseUserById(userId) {

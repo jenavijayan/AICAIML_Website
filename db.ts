@@ -554,18 +554,34 @@ export async function verifyCredentials(email: string, password: string): Promis
     return getFallbackUser(email, password) || null;
   }
 
-  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase().trim()).single();
-  if (error || !data) {
+  const normalizedEmail = email.toLowerCase().trim();
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', normalizedEmail)
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  if (error || !Array.isArray(data) || data.length === 0) {
     // User not found in Supabase — fall back to dev credentials so the
     // initial admin account works even before seedDevUser has run.
     return getFallbackUser(email, password) || null;
   }
-  if (!verifyPassword(password, data.password_hash, data.password_salt)) {
+
+  const matched = data.find((row) => {
+    try {
+      return verifyPassword(password, row.password_hash, row.password_salt);
+    } catch {
+      return false;
+    }
+  });
+
+  if (!matched) {
     // Password mismatch in Supabase — fall back to dev credentials as a
     // safety net (e.g. seed re-creation or credential drift).
     return getFallbackUser(email, password) || null;
   }
-  return toPublicUser(data);
+  return toPublicUser(matched);
 }
 
 export async function updateUserPassword(email: string, currentPassword: string, newPassword: string): Promise<boolean> {

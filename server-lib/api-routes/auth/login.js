@@ -1,4 +1,49 @@
-import { SESSION_COOKIE, getFallbackUser, getSupabaseUser, createSupabaseSession, seedDevUser, parseJsonBody } from '../../authFallback.js';
+import {
+  SESSION_COOKIE,
+  FALLBACK_AUTH_EMAIL,
+  FALLBACK_AUTH_PASSWORD,
+  getFallbackUser,
+  getSupabaseUser,
+  createSupabaseSession,
+  seedDevUser,
+  parseJsonBody,
+  hashPassword
+} from '../../authFallback.js';
+import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
+
+function canAttemptBootstrapAdminRepair(email, password) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedPassword = String(password || '').trim();
+  if (!normalizedEmail || !normalizedPassword) return false;
+  return normalizedEmail === String(FALLBACK_AUTH_EMAIL || '').trim().toLowerCase() && normalizedPassword === String(FALLBACK_AUTH_PASSWORD || '').trim();
+}
+
+async function repairBootstrapAdminPassword(email, password) {
+  if (!SUPABASE_ENABLED || !supabase) return false;
+
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const { data: rows, error } = await supabase
+    .from('users')
+    .select('id, role')
+    .eq('email', normalizedEmail)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error || !Array.isArray(rows) || rows.length === 0) return false;
+
+  const adminIds = rows
+    .filter((row) => String(row.role || '').toLowerCase() === 'admin' && row.id)
+    .map((row) => row.id);
+  if (adminIds.length === 0) return false;
+
+  const { hash, salt } = hashPassword(password);
+  const update = await supabase.from('users').update({
+    password_hash: hash,
+    password_salt: salt,
+    updated_at: new Date().toISOString()
+  }).in('id', adminIds);
+
+  return !update.error;
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -20,6 +65,12 @@ export default async function handler(req, res) {
       // never seeded, try a one-time seed and retry before failing auth.
       await seedDevUser();
       user = await getSupabaseUser(email, password);
+    }
+    if (!user && canAttemptBootstrapAdminRepair(email, password)) {
+      const repaired = await repairBootstrapAdminPassword(email, password);
+      if (repaired) {
+        user = await getSupabaseUser(email, password);
+      }
     }
     if (!user) {
       user = getFallbackUser(email, password);
