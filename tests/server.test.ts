@@ -1,24 +1,27 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'node:http';
-import { startServer } from '../server';
 
 describe('public API routes', () => {
-  let server: Server;
+  let server: Server | undefined;
   let baseUrl: string;
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
-    process.env.EMAIL_USER = 'test@example.com';
+    process.env.EMAIL_USER = 'your-email@gmail.com';
     process.env.EMAIL_APP_PASSWORD = 'test-password';
     process.env.LOAD_LOCAL_ENV = 'false';
     process.env.HOST = '0.0.0.0';
+    process.env.PORT = '0';
+    process.env.DISABLE_HMR = 'true';
 
+    const { startServer } = await import('../server');
     const instance = await startServer();
     server = instance.server;
     baseUrl = `http://127.0.0.1:${instance.port}`;
   });
 
   afterAll(async () => {
+    if (!server) return;
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });

@@ -403,10 +403,12 @@ export async function startServer() {
 
   const startPromise = (async () => {
     const app = express();
-    const preferredPort = Number(process.env.PORT) || 3000;
+    const parsedPort = Number(process.env.PORT);
+    const preferredPort = Number.isFinite(parsedPort) && parsedPort >= 0 ? parsedPort : 3000;
     const host = resolveDevHost();
     const PORT = await getPreferredPort(preferredPort, host);
     const hmrPort = Number(process.env.HMR_PORT || 3001);
+    const hmrEnabled = process.env.DISABLE_HMR !== 'true';
 
     app.disable('x-powered-by');
 
@@ -1668,12 +1670,14 @@ Membership & Treasury Desk, AICAIML Council`;
         host,
         port: PORT,
         strictPort: true,
-        hmr: {
-          host,
-          port: hmrPort,
-          protocol: 'ws',
-          clientPort: hmrPort,
-        },
+        hmr: hmrEnabled
+          ? {
+              host,
+              port: hmrPort,
+              protocol: 'ws',
+              clientPort: hmrPort,
+            }
+          : false,
       },
       appType: 'spa',
     });
@@ -1686,10 +1690,10 @@ Membership & Treasury Desk, AICAIML Council`;
     });
   }
 
-  // Seed the developer test account on every startup (idempotent).
-  // When Supabase is configured, the default admin account is seeded so the
-  // initial admin can sign in on first deploy. Set SEED_DEV_USER=false to opt out.
-  if (process.env.SEED_DEV_USER !== 'false') {
+  // Seed the developer test account only in non-production by default.
+  // In production, require SEED_DEV_USER=true for explicit opt-in.
+  const shouldSeedDevUser = process.env.SEED_DEV_USER === 'true' || (process.env.NODE_ENV !== 'production' && process.env.SEED_DEV_USER !== 'false');
+  if (shouldSeedDevUser) {
     if (isSupabaseConfigured()) {
       try {
         await seedDevUser();

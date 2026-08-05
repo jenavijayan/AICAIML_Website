@@ -46,6 +46,34 @@ function failIfSupabaseError(result, context) {
   }
 }
 
+function errorMentionsColumn(error, columnName) {
+  if (!error || !columnName) return false;
+  const message = String(error.message || '').toLowerCase();
+  return message.includes(columnName.toLowerCase());
+}
+
+async function selectWithOrderFallback(table, primaryOrderColumn) {
+  let result = await supabase.from(table).select('*').order(primaryOrderColumn, { ascending: false });
+  if (!result.error) return result;
+
+  if (errorMentionsColumn(result.error, primaryOrderColumn)) {
+    result = await supabase.from(table).select('*').order('created_at', { ascending: false });
+    if (!result.error) return result;
+  }
+
+  // Last resort for legacy deployments that do not support expected sort columns.
+  result = await supabase.from(table).select('*');
+  return result;
+}
+
+async function countTable(table) {
+  const result = await supabase.from(table).select('*', { count: 'exact', head: true });
+  return {
+    count: result.count || 0,
+    error: result.error ? String(result.error.message || 'Unknown error') : null
+  };
+}
+
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
@@ -183,51 +211,59 @@ async function handleOverview(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
 
-  const [
-    enquiriesRes, applicationsRes, eventRegsRes, membershipsRes,
-    usersRes, coursesRes, projectsRes, partnersRes, testimonialsRes, newsRes
-  ] = await Promise.all([
-    supabase.from('enquiries').select('*', { count: 'exact', head: true }),
-    supabase.from('applications').select('*', { count: 'exact', head: true }),
-    supabase.from('event_registrations').select('*', { count: 'exact', head: true }),
-    supabase.from('memberships').select('*', { count: 'exact', head: true }),
-    supabase.from('users').select('*', { count: 'exact', head: true }),
-    supabase.from('courses').select('*', { count: 'exact', head: true }),
-    supabase.from('projects').select('*', { count: 'exact', head: true }),
-    supabase.from('partners').select('*', { count: 'exact', head: true }),
-    supabase.from('testimonials').select('*', { count: 'exact', head: true }),
-    supabase.from('news').select('*', { count: 'exact', head: true })
+  const [enquiries, applications, eventRegistrations, memberships, users, courses, projects, partners, testimonials, news] = await Promise.all([
+    countTable('enquiries'),
+    countTable('applications'),
+    countTable('event_registrations'),
+    countTable('memberships'),
+    countTable('users'),
+    countTable('courses'),
+    countTable('projects'),
+    countTable('partners'),
+    countTable('testimonials'),
+    countTable('news')
   ]);
 
-  failIfSupabaseError(enquiriesRes, 'Failed to query enquiries overview');
-  failIfSupabaseError(applicationsRes, 'Failed to query applications overview');
-  failIfSupabaseError(eventRegsRes, 'Failed to query event registrations overview');
-  failIfSupabaseError(membershipsRes, 'Failed to query memberships overview');
-  failIfSupabaseError(usersRes, 'Failed to query users overview');
-  failIfSupabaseError(coursesRes, 'Failed to query courses overview');
-  failIfSupabaseError(projectsRes, 'Failed to query projects overview');
-  failIfSupabaseError(partnersRes, 'Failed to query partners overview');
-  failIfSupabaseError(testimonialsRes, 'Failed to query testimonials overview');
-  failIfSupabaseError(newsRes, 'Failed to query news overview');
+  const warningMap = {
+    enquiries: enquiries.error,
+    applications: applications.error,
+    eventRegistrations: eventRegistrations.error,
+    memberships: memberships.error,
+    users: users.error,
+    courses: courses.error,
+    projects: projects.error,
+    partners: partners.error,
+    testimonials: testimonials.error,
+    news: news.error
+  };
 
-  json(res, 200, {
-    enquiries: enquiriesRes.count || 0,
-    applications: applicationsRes.count || 0,
-    eventRegistrations: eventRegsRes.count || 0,
-    memberships: membershipsRes.count || 0,
-    users: usersRes.count || 0,
-    courses: coursesRes.count || 0,
-    projects: projectsRes.count || 0,
-    partners: partnersRes.count || 0,
-    testimonials: testimonialsRes.count || 0,
-    news: newsRes.count || 0
+  const warningEntries = Object.entries(warningMap).filter(([, value]) => Boolean(value));
+  if (warningEntries.length === Object.keys(warningMap).length) {
+    return json(res, 500, {
+      error: 'Failed to query overview metrics. Check admin diagnostics and schema migrations.',
+      details: warningMap
+    });
+  }
+
+  return json(res, 200, {
+    enquiries: enquiries.count,
+    applications: applications.count,
+    eventRegistrations: eventRegistrations.count,
+    memberships: memberships.count,
+    users: users.count,
+    courses: courses.count,
+    projects: projects.count,
+    partners: partners.count,
+    testimonials: testimonials.count,
+    news: news.count,
+    warnings: warningEntries.length > 0 ? warningMap : undefined
   });
 }
 
 async function handleEnquiries(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
-  const { data, error } = await supabase.from('enquiries').select('*').order('submitted_at', { ascending: false });
+  const { data, error } = await selectWithOrderFallback('enquiries', 'submitted_at');
   if (error) return json(res, 500, { error: `Failed to load enquiries: ${error.message}` });
   json(res, 200, data || []);
 }
@@ -235,7 +271,7 @@ async function handleEnquiries(req, res) {
 async function handleApplications(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
-  const { data, error } = await supabase.from('applications').select('*').order('submitted_at', { ascending: false });
+  const { data, error } = await selectWithOrderFallback('applications', 'submitted_at');
   if (error) return json(res, 500, { error: `Failed to load applications: ${error.message}` });
   json(res, 200, data || []);
 }
@@ -342,7 +378,7 @@ async function handleRejectApplication(req, res, id) {
 async function handleEventRegistrations(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
-  const { data, error } = await supabase.from('event_registrations').select('*').order('registered_at', { ascending: false });
+  const { data, error } = await selectWithOrderFallback('event_registrations', 'registered_at');
   if (error) return json(res, 500, { error: `Failed to load event registrations: ${error.message}` });
   json(res, 200, data || []);
 }
@@ -350,7 +386,7 @@ async function handleEventRegistrations(req, res) {
 async function handleMemberships(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
-  const { data, error } = await supabase.from('memberships').select('*').order('paid_at', { ascending: false });
+  const { data, error } = await selectWithOrderFallback('memberships', 'paid_at');
   if (error) return json(res, 500, { error: `Failed to load memberships: ${error.message}` });
   json(res, 200, data || []);
 }
@@ -358,7 +394,7 @@ async function handleMemberships(req, res) {
 async function handleUsers(req, res) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
-  const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+  const { data, error } = await selectWithOrderFallback('users', 'created_at');
   if (error) return json(res, 500, { error: `Failed to load users: ${error.message}` });
   const safe = (data || []).map((u) => {
     const { password_hash, password_salt, ...rest } = u;

@@ -106,7 +106,8 @@ export default async function handler(req, res) {
     }
 
     const { token, expiresAt } = await createSupabaseSession(userRow.id);
-    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; HttpOnly; Path=/; Expires=${expiresAt}; SameSite=Lax`);
+    const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; HttpOnly; Path=/; Expires=${expiresAt}; SameSite=Lax${secure}`);
     return res.status(200).json({ success: true, user: toPublicUser(userRow) });
   } catch (error) {
     console.error('Member login error:', error);

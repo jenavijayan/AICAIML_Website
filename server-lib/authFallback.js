@@ -7,8 +7,12 @@ const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
 const FALLBACK_AUTH_SECRET = process.env.AUTH_SESSION_SECRET || 'aicaiml-dev-session-secret';
 const SESSION_COOKIE = 'aicaiml_session';
 const FALLBACK_USER_ID = 'user-dev-001';
+const FALLBACK_AUTH_ENABLED =
+  String(process.env.AUTH_ALLOW_FALLBACK_AUTH || '').trim().toLowerCase() === 'true' ||
+  process.env.NODE_ENV !== 'production';
 
 function getFallbackUser(email, password, id) {
+  if (!FALLBACK_AUTH_ENABLED) return null;
   const normalizedEmail = (email || '').trim().toLowerCase();
   if (id && id !== FALLBACK_USER_ID) return null;
   if (!normalizedEmail && !password && !id) return null;
