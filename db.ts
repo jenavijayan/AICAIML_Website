@@ -185,31 +185,28 @@ export async function updateApplicationStatus(
   memberId?: string,
   rejectionReason?: string
 ) {
-  const basePayload: Record<string, string | null> = {
+  const payload: Record<string, string | null> = {
     status,
     reviewed_at: new Date().toISOString(),
   };
-  if (approvalDate) basePayload.approval_date = approvalDate;
+  if (approvalDate) payload.approval_date = approvalDate;
+  if (memberId) payload.member_id = memberId;
+  if (rejectionReason) payload.rejection_reason = rejectionReason;
 
-  let { data, error } = await supabase.from('applications').update(basePayload).eq('id', id).select('*').single();
+  const optionalColumns = ['member_id', 'approval_date', 'rejection_reason', 'reviewed_at', 'reviewed_by', 'updated_at'];
+  const current = { ...payload };
 
-  if (error && (memberId || rejectionReason)) {
-    const extraPayload: Record<string, string | null> = { ...basePayload };
-    if (memberId) extraPayload.member_id = memberId;
-    if (rejectionReason) extraPayload.rejection_reason = rejectionReason;
-    const retry = await supabase.from('applications').update(extraPayload).eq('id', id).select('*').single();
-    if (retry.error) {
-      const minimal = await supabase.from('applications').update(basePayload).eq('id', id).select('*').single();
-      if (minimal.error) throw minimal.error;
-      data = minimal.data;
-    } else {
-      data = retry.data;
-    }
-  } else if (error) {
-    throw error;
+  while (true) {
+    const { data, error } = await supabase.from('applications').update(current).eq('id', id).select('*').single();
+    if (!error) return data;
+
+    const missingOptional = optionalColumns.find((col) =>
+      Object.prototype.hasOwnProperty.call(current, col) && String(error.message || '').toLowerCase().includes(col.toLowerCase())
+    );
+    if (!missingOptional) throw error;
+
+    delete current[missingOptional];
   }
-
-  return data;
 }
 
 // --- Event Registrations ---

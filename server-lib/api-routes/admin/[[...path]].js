@@ -74,6 +74,25 @@ async function countTable(table) {
   };
 }
 
+async function updateApplicationCompat(id, payload) {
+  const current = { ...payload };
+  const optionalColumns = ['member_id', 'approval_date', 'rejection_reason', 'reviewed_at', 'reviewed_by', 'updated_at'];
+
+  while (true) {
+    const result = await supabase.from('applications').update(current).eq('id', id);
+    if (!result.error) {
+      return { error: null, appliedPayload: current };
+    }
+
+    const missingOptional = optionalColumns.find((col) => Object.prototype.hasOwnProperty.call(current, col) && errorMentionsColumn(result.error, col));
+    if (!missingOptional) {
+      return { error: result.error, appliedPayload: current };
+    }
+
+    delete current[missingOptional];
+  }
+}
+
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
@@ -307,26 +326,20 @@ async function handleApproveApplication(req, res, id) {
   const memberUser = await ensureMemberUser({ name, email, membershipId: memberId });
   const { rawToken } = await issuePasswordSetupToken(memberUser.id);
 
-  const { error: updateError } = await supabase.from('applications').update({
+  const updateResult = await updateApplicationCompat(id, {
     status: 'Approved',
     reviewed_at: new Date().toISOString(),
     approval_date: approvalDate,
     member_id: memberId
-  }).eq('id', id);
-
-  if (updateError) {
-    const { error: retryError } = await supabase.from('applications').update({
-      status: 'Approved',
-      reviewed_at: new Date().toISOString(),
-      approval_date: approvalDate,
-      member_id: memberId
-    }).eq('id', id);
-    if (retryError) return json(res, 500, { error: retryError.message });
+  });
+  if (updateResult.error) {
+    return json(res, 500, { error: updateResult.error.message });
   }
 
   const baseUrl = process.env.BASE_URL || 'https://www.aic-aiml.org';
   const setPasswordLink = `${baseUrl}/#set-password?token=${encodeURIComponent(rawToken)}`;
-  let emailBody = `Dear ${name},\n\nCongratulations! Your application for AICAIML ${application.category.toUpperCase()} membership has been reviewed and approved by the Membership Board.\n\nAPPROVAL DETAILS:\n - Membership ID: ${memberId}\n - Application ID: ${application.id}\n - Membership Type: ${application.category.toUpperCase()}\n - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nSECURE ACCOUNT SETUP:\n 1. Set your member portal password using the secure link below:\n ${setPasswordLink}\n 2. This link expires in 48 hours for your account security.\n 3. After setting the password, sign in at: ${baseUrl}/#member-login\n\nPlease keep your credentials private and do not share them.`;
+  const membershipType = String(application.category || application.membership_category || 'member').toUpperCase();
+  let emailBody = `Dear ${name},\n\nCongratulations! Your application for AICAIML ${membershipType} membership has been reviewed and approved by the Membership Board.\n\nAPPROVAL DETAILS:\n - Membership ID: ${memberId}\n - Application ID: ${application.id}\n - Membership Type: ${membershipType}\n - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nSECURE ACCOUNT SETUP:\n 1. Set your member portal password using the secure link below:\n ${setPasswordLink}\n 2. This link expires in 48 hours for your account security.\n 3. After setting the password, sign in at: ${baseUrl}/#member-login\n\nPlease keep your credentials private and do not share them.`;
 
   emailBody += `\n\nWelcome to India's premier AI/ML advancements ecosystem!\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
 
@@ -359,18 +372,19 @@ async function handleRejectApplication(req, res, id) {
   if (fetchError || !application) return json(res, 404, { error: 'Application not found.' });
 
   const rejectionDate = new Date().toISOString();
-  const { error: updateError } = await supabase.from('applications').update({
+  const updateResult = await updateApplicationCompat(id, {
     status: 'Rejected',
     reviewed_at: rejectionDate,
     rejection_reason: reason || null
-  }).eq('id', id);
-  if (updateError) return json(res, 500, { error: updateError.message });
+  });
+  if (updateResult.error) return json(res, 500, { error: updateResult.error.message });
 
   const formData = application.form_data || {};
   const name = formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName || 'Applicant';
   const email = (formData.emailId || formData.email || 'applicant@aic-aiml.org').trim().toLowerCase();
 
-  const emailBody = `Dear ${name},\n\nThank you for your interest in AICAIML ${application.category.toUpperCase()} membership.\n\nAfter careful review by the Membership Board, we regret to inform you that your application (Ref: ${application.id}) has been marked as Rejected.\n\n${reason ? `REJECTION REASON:\n${reason}\n\n` : ''}If you believe this decision was made in error, or if you would like to address the concerns noted above, please contact our Membership Office at support@aic-aiml.org with your application reference number.\n\nYou may also choose to resubmit a new application after addressing the feedback provided.\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
+  const membershipType = String(application.category || application.membership_category || 'member').toUpperCase();
+  const emailBody = `Dear ${name},\n\nThank you for your interest in AICAIML ${membershipType} membership.\n\nAfter careful review by the Membership Board, we regret to inform you that your application (Ref: ${application.id}) has been marked as Rejected.\n\n${reason ? `REJECTION REASON:\n${reason}\n\n` : ''}If you believe this decision was made in error, or if you would like to address the concerns noted above, please contact our Membership Office at support@aic-aiml.org with your application reference number.\n\nYou may also choose to resubmit a new application after addressing the feedback provided.\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
 
   try {
     const transporter = nodemailer.createTransport({
