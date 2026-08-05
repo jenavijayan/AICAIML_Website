@@ -61,8 +61,48 @@ async function seedDevUser() {
   const { data: byId } = await supabase.from('users').select('*').eq('id', FALLBACK_USER_ID);
   const existingById = Array.isArray(byId) && byId.length > 0 ? byId[0] : null;
   if (existingById) return toPublicUser(existingById);
-  const { data: byEmail } = await supabase.from('users').select('*').eq('email', FALLBACK_AUTH_EMAIL);
-  if (byEmail && byEmail.length > 0) return toPublicUser(byEmail[0]);
+
+  const { data: byEmail } = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', FALLBACK_AUTH_EMAIL)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (Array.isArray(byEmail) && byEmail.length > 0) {
+    const target = byEmail.find((row) => String(row.role || '').toLowerCase() === 'admin') || byEmail[0];
+    const needsRepair =
+      String(target.role || '').toLowerCase() !== 'admin' ||
+      !target.password_hash ||
+      !target.password_salt ||
+      String(target.membership_status || '').toLowerCase() !== 'active';
+
+    if (!needsRepair) return toPublicUser(target);
+
+    const { hash, salt } = hashPassword(FALLBACK_AUTH_PASSWORD);
+    let repair = await supabase.from('users').update({
+      role: 'admin',
+      password_hash: hash,
+      password_salt: salt,
+      membership_status: 'active',
+      membership_plan: 'Premium',
+      updated_at: new Date().toISOString()
+    }).eq('id', target.id).select('*').single();
+
+    if (repair.error) {
+      repair = await supabase.from('users').update({
+        role: 'admin',
+        password_hash: hash,
+        password_salt: salt,
+        membership_status: 'active',
+        membership_plan: 'Premium'
+      }).eq('id', target.id).select('*').single();
+    }
+
+    if (!repair.error && repair.data) return toPublicUser(repair.data);
+    console.error('Failed to repair fallback admin user:', repair.error);
+  }
+
   const { hash, salt } = hashPassword(FALLBACK_AUTH_PASSWORD);
   const { data, error } = await supabase.from('users').insert({
     id: FALLBACK_USER_ID,
