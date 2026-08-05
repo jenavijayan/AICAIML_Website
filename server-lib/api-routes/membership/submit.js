@@ -43,6 +43,23 @@ async function sendEmail(to, subject, text) {
   }
 }
 
+async function insertApplicationCompat(payload) {
+  const optionalColumns = ['created_at', 'updated_at'];
+  const current = { ...payload };
+
+  while (true) {
+    const result = await supabase.from('applications').insert(current);
+    if (!result.error) return result;
+
+    const missingOptional = optionalColumns.find((column) =>
+      Object.prototype.hasOwnProperty.call(current, column) && String(result.error.message || '').toLowerCase().includes(column.toLowerCase())
+    );
+
+    if (!missingOptional) return result;
+    delete current[missingOptional];
+  }
+}
+
 export default async function handler(req, res) {
   if (!SUPABASE_ENABLED) {
     return res.status(500).json({ error: 'Supabase is not configured on this deployment.' });
@@ -85,7 +102,7 @@ export default async function handler(req, res) {
     const phone = String(parsedFormData.phone || parsedFormData.mobile || parsedFormData.mobileNo || '').trim() || undefined;
     const verificationCode = String(Math.floor(100000 + Math.random() * 900000));
 
-    const { error } = await supabase.from('applications').insert({
+    const { error } = await insertApplicationCompat({
       id: applicationId,
       membership_no: membershipNo,
       category,
