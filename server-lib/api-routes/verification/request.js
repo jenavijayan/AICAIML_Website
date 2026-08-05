@@ -2,6 +2,7 @@ import { SUPABASE_ENABLED } from '../../supabaseClient.js';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import { setVerificationCode } from '../../verificationStore.js';
+import { setVerificationCookie } from '../../verificationCookie.js';
 
 async function sendEmail(to, subject, text) {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_USER === 'your-email@gmail.com') {
@@ -57,6 +58,7 @@ export default async function handler(req, res) {
     const cleanEmail = String(email).trim().toLowerCase();
     const code = String(Math.floor(100000 + Math.random() * 900000));
     setVerificationCode(cleanEmail, code);
+    setVerificationCookie(res, cleanEmail, code);
     const emailBody = `Your AICAIML verification code is: ${code}\n\nThis code expires in 10 minutes.`;
     const { sent } = await sendEmail(cleanEmail, 'AICAIML Email Verification', emailBody);
 
