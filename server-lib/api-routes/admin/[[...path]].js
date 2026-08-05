@@ -40,6 +40,39 @@ function json(res, statusCode, obj) {
   res.status(statusCode).json(obj);
 }
 
+function createTraceId() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return crypto.randomBytes(16).toString('hex');
+}
+
+function serializeError(error) {
+  if (!error) return { message: 'Unknown error' };
+  return {
+    message: String(error.message || error),
+    code: error.code || null,
+    details: error.details || null,
+    hint: error.hint || null,
+    stack: error.stack || null
+  };
+}
+
+function createStepLogger(scope, metadata) {
+  return (event, details = {}) => {
+    const payload = {
+      timestamp: new Date().toISOString(),
+      scope,
+      event,
+      ...metadata,
+      ...details
+    };
+    try {
+      console.log(`[${scope}]`, JSON.stringify(payload));
+    } catch {
+      console.log(`[${scope}]`, payload);
+    }
+  };
+}
+
 function failIfSupabaseError(result, context) {
   if (result && result.error) {
     throw new Error(`${context}: ${result.error.message}`);
@@ -74,23 +107,33 @@ async function countTable(table) {
   };
 }
 
-async function updateApplicationCompat(id, payload) {
+async function updateRowCompatById(table, id, payload, optionalColumns, logStep) {
   const current = { ...payload };
-  const optionalColumns = ['member_id', 'approval_date', 'rejection_reason', 'reviewed_at', 'reviewed_by', 'updated_at'];
+  const removedColumns = [];
 
   while (true) {
-    const result = await supabase.from('applications').update(current).eq('id', id);
+    logStep?.('query.update.start', { table, id, keys: Object.keys(current) });
+    const result = await supabase.from(table).update(current).eq('id', id);
     if (!result.error) {
-      return { error: null, appliedPayload: current };
+      logStep?.('query.update.success', { table, id, keys: Object.keys(current), removedColumns });
+      return { error: null, appliedPayload: current, removedColumns };
     }
 
+    logStep?.('query.update.error', { table, id, error: serializeError(result.error), keys: Object.keys(current) });
     const missingOptional = optionalColumns.find((col) => Object.prototype.hasOwnProperty.call(current, col) && errorMentionsColumn(result.error, col));
     if (!missingOptional) {
-      return { error: result.error, appliedPayload: current };
+      return { error: result.error, appliedPayload: current, removedColumns };
     }
 
     delete current[missingOptional];
+    removedColumns.push(missingOptional);
+    logStep?.('query.update.drop_optional_column', { table, id, droppedColumn: missingOptional });
   }
+}
+
+async function updateApplicationCompat(id, payload) {
+  const optionalColumns = ['member_id', 'approval_date', 'rejection_reason', 'reviewed_at', 'reviewed_by', 'updated_at'];
+  return updateRowCompatById('applications', id, payload, optionalColumns);
 }
 
 function hashPassword(password) {
@@ -106,12 +149,17 @@ function parseMembershipSequence(memberId, year) {
   return Number(match[2]) || 0;
 }
 
-async function generateMembershipId() {
+async function generateMembershipId(logStep) {
   const year = new Date().getFullYear();
   const pattern = `AICAIML-${year}-%`;
 
+  logStep?.('query.membership_sequence.users.start', { pattern });
   const usersRes = await supabase.from('users').select('membership_no').like('membership_no', pattern);
+  logStep?.('query.membership_sequence.users.result', { rowCount: (usersRes.data || []).length, error: usersRes.error ? serializeError(usersRes.error) : null });
+
+  logStep?.('query.membership_sequence.applications.start', { pattern });
   let appsRes = await supabase.from('applications').select('member_id').like('member_id', pattern);
+  logStep?.('query.membership_sequence.applications.result', { rowCount: (appsRes.data || []).length, error: appsRes.error ? serializeError(appsRes.error) : null });
 
   // Backward compatibility for deployments where member_id may not exist yet.
   if (appsRes.error && String(appsRes.error.message || '').toLowerCase().includes('member_id')) {
@@ -134,16 +182,22 @@ async function generateMembershipId() {
   return `AICAIML-${year}-${String(nextSeq).padStart(4, '0')}`;
 }
 
-async function ensureMemberUser({ name, email, membershipId }) {
+async function ensureMemberUser({ name, email, membershipId }, logStep) {
+  const mutation = { created: false, userId: null, previousUser: null };
+
+  logStep?.('query.users.by_email.start', { email });
   let { data: existingUser, error: existingUserError } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
+  logStep?.('query.users.by_email.result', { found: Boolean(existingUser), error: existingUserError ? serializeError(existingUserError) : null });
   failIfSupabaseError({ error: existingUserError }, 'Failed to check existing member user');
 
   if (!existingUser) {
     const tempPassword = crypto.randomBytes(24).toString('base64url');
     const { hash, salt } = hashPassword(tempPassword);
     const now = new Date().toISOString();
+    const newUserId = 'mem-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    logStep?.('query.users.insert.start', { email, generatedUserId: newUserId });
     let createRes = await supabase.from('users').insert({
-      id: 'mem-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      id: newUserId,
       name,
       email,
       password_hash: hash,
@@ -161,7 +215,7 @@ async function ensureMemberUser({ name, email, membershipId }) {
     // Fallback payload for deployments with older users schema.
     if (createRes.error) {
       createRes = await supabase.from('users').insert({
-        id: 'mem-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        id: newUserId,
         name,
         email,
         password_hash: hash,
@@ -174,15 +228,32 @@ async function ensureMemberUser({ name, email, membershipId }) {
       }).select('*').single();
     }
 
+    logStep?.('query.users.insert.result', { error: createRes.error ? serializeError(createRes.error) : null, userId: createRes.data?.id || null });
     failIfSupabaseError(createRes, 'Failed to create approved member user');
     existingUser = createRes.data;
+    mutation.created = true;
+    mutation.userId = existingUser.id;
   } else {
+    mutation.created = false;
+    mutation.userId = existingUser.id;
+    mutation.previousUser = {
+      role: existingUser.role,
+      membership_no: existingUser.membership_no,
+      membership_status: existingUser.membership_status,
+      name: existingUser.name,
+      password_hash: existingUser.password_hash,
+      password_salt: existingUser.password_salt,
+      must_reset_password: existingUser.must_reset_password,
+      updated_at: existingUser.updated_at
+    };
+
     let resetSeed = null;
     if (!existingUser.password_hash || !existingUser.password_salt) {
       const tempPassword = crypto.randomBytes(24).toString('base64url');
       resetSeed = hashPassword(tempPassword);
     }
 
+    logStep?.('query.users.update_existing.start', { userId: existingUser.id });
     let updateRes = await supabase.from('users').update({
       role: 'member',
       membership_no: existingUser.membership_no || membershipId,
@@ -206,36 +277,100 @@ async function ensureMemberUser({ name, email, membershipId }) {
       }).eq('id', existingUser.id).select('*').single();
     }
 
+    logStep?.('query.users.update_existing.result', { userId: existingUser.id, error: updateRes.error ? serializeError(updateRes.error) : null });
+
     if (!updateRes.error) {
       existingUser = updateRes.data;
     }
   }
 
-  return existingUser;
+  return { user: existingUser, mutation };
 }
 
-async function issuePasswordSetupToken(userId) {
+async function rollbackMemberUserMutation(mutation, logStep) {
+  if (!mutation || !mutation.userId) return;
+
+  if (mutation.created) {
+    logStep?.('query.users.rollback_delete.start', { userId: mutation.userId });
+    const deleteRes = await supabase.from('users').delete().eq('id', mutation.userId);
+    if (deleteRes.error) {
+      logStep?.('query.users.rollback_delete.error', { userId: mutation.userId, error: serializeError(deleteRes.error) });
+    } else {
+      logStep?.('query.users.rollback_delete.success', { userId: mutation.userId });
+    }
+    return;
+  }
+
+  if (!mutation.previousUser) return;
+  const restorePayload = {
+    role: mutation.previousUser.role,
+    membership_no: mutation.previousUser.membership_no,
+    membership_status: mutation.previousUser.membership_status,
+    name: mutation.previousUser.name,
+    password_hash: mutation.previousUser.password_hash,
+    password_salt: mutation.previousUser.password_salt,
+    must_reset_password: mutation.previousUser.must_reset_password,
+    updated_at: mutation.previousUser.updated_at || new Date().toISOString()
+  };
+
+  const restore = await updateRowCompatById('users', mutation.userId, restorePayload, ['must_reset_password', 'updated_at'], logStep);
+  if (restore.error) {
+    logStep?.('query.users.rollback_restore.error', { userId: mutation.userId, error: serializeError(restore.error) });
+  } else {
+    logStep?.('query.users.rollback_restore.success', { userId: mutation.userId });
+  }
+}
+
+async function issuePasswordSetupToken(userId, logStep) {
   const rawToken = crypto.randomBytes(32).toString('base64url');
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
   const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
-  let updateRes = await supabase.from('users').update({
+  const tokenPayload = {
     password_reset_token: tokenHash,
     password_reset_expires_at: expiresAt,
     must_reset_password: true,
     updated_at: new Date().toISOString()
-  }).eq('id', userId);
+  };
 
-  if (updateRes.error) {
-    updateRes = await supabase.from('users').update({
-      password_reset_token: tokenHash,
-      password_reset_expires_at: expiresAt,
-      must_reset_password: true
-    }).eq('id', userId);
+  const tokenUpdate = await updateRowCompatById(
+    'users',
+    userId,
+    tokenPayload,
+    ['password_reset_token', 'password_reset_expires_at', 'must_reset_password', 'updated_at'],
+    logStep
+  );
+
+  if (tokenUpdate.error) {
+    failIfSupabaseError(tokenUpdate, 'Failed to create password setup token');
   }
 
-  failIfSupabaseError(updateRes, 'Failed to create password setup token');
-  return { rawToken, expiresAt };
+  const tokenColumnsPersisted =
+    Object.prototype.hasOwnProperty.call(tokenUpdate.appliedPayload, 'password_reset_token') &&
+    Object.prototype.hasOwnProperty.call(tokenUpdate.appliedPayload, 'password_reset_expires_at');
+
+  if (tokenColumnsPersisted) {
+    logStep?.('workflow.password_setup.mode', { mode: 'setup_link', expiresAt });
+    return { mode: 'setup_link', rawToken, expiresAt };
+  }
+
+  const tempPassword = crypto.randomBytes(18).toString('base64url');
+  const { hash, salt } = hashPassword(tempPassword);
+  const passwordFallback = await updateRowCompatById(
+    'users',
+    userId,
+    {
+      password_hash: hash,
+      password_salt: salt,
+      must_reset_password: true,
+      updated_at: new Date().toISOString()
+    },
+    ['must_reset_password', 'updated_at'],
+    logStep
+  );
+  failIfSupabaseError(passwordFallback, 'Failed to provision temporary password fallback');
+  logStep?.('workflow.password_setup.mode', { mode: 'temporary_password' });
+  return { mode: 'temporary_password', tempPassword, expiresAt: null };
 }
 
 async function handleOverview(req, res) {
@@ -311,55 +446,121 @@ async function handleApproveApplication(req, res, id) {
   const admin = await getAdminUser(req);
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
 
-  const { data: application, error: fetchError } = await supabase.from('applications').select('*').eq('id', id).single();
-  if (fetchError || !application) return json(res, 404, { error: 'Application not found.' });
-
-  const approvalDate = new Date().toISOString();
-  const formData = application.form_data || {};
-  const name = formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName || 'Applicant';
-  const email = (formData.emailId || formData.email || 'applicant@aic-aiml.org').trim().toLowerCase();
-
-  const memberId = application.member_id && /^AICAIML-\d{4}-\d{4}$/.test(application.member_id)
-    ? application.member_id
-    : await generateMembershipId();
-
-  const memberUser = await ensureMemberUser({ name, email, membershipId: memberId });
-  const { rawToken } = await issuePasswordSetupToken(memberUser.id);
-
-  const updateResult = await updateApplicationCompat(id, {
-    status: 'Approved',
-    reviewed_at: new Date().toISOString(),
-    approval_date: approvalDate,
-    member_id: memberId
+  const traceId = createTraceId();
+  const startedAt = Date.now();
+  const logStep = createStepLogger('admin.approve', {
+    traceId,
+    endpoint: '/api/admin/applications/:id/approve',
+    method: req.method,
+    applicationId: id,
+    adminId: admin.id,
+    adminEmail: admin.email
   });
-  if (updateResult.error) {
-    return json(res, 500, { error: updateResult.error.message });
-  }
-
-  const baseUrl = process.env.BASE_URL || 'https://www.aic-aiml.org';
-  const setPasswordLink = `${baseUrl}/#set-password?token=${encodeURIComponent(rawToken)}`;
-  const membershipType = String(application.category || application.membership_category || 'member').toUpperCase();
-  let emailBody = `Dear ${name},\n\nCongratulations! Your application for AICAIML ${membershipType} membership has been reviewed and approved by the Membership Board.\n\nAPPROVAL DETAILS:\n - Membership ID: ${memberId}\n - Application ID: ${application.id}\n - Membership Type: ${membershipType}\n - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nSECURE ACCOUNT SETUP:\n 1. Set your member portal password using the secure link below:\n ${setPasswordLink}\n 2. This link expires in 48 hours for your account security.\n 3. After setting the password, sign in at: ${baseUrl}/#member-login\n\nPlease keep your credentials private and do not share them.`;
-
-  emailBody += `\n\nWelcome to India's premier AI/ML advancements ecosystem!\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
+  let memberMutation = null;
 
   try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_APP_PASSWORD }
+    logStep('request.received', {
+      hasCookie: Boolean(req.headers?.cookie),
+      userAgent: req.headers?.['user-agent'] || null,
+      origin: req.headers?.origin || null
     });
-    if (process.env.EMAIL_USER && process.env.EMAIL_APP_PASSWORD && process.env.EMAIL_USER !== 'your-email@gmail.com') {
-      await transporter.sendMail({ from: `"AICAIML Council" <${process.env.EMAIL_USER}>`, to: email, subject: `[AICAIML] Membership Application Approved - ${application.membership_no}`, text: emailBody });
-    }
-  } catch (err) {
-    console.error('Failed to send approval email:', err);
-  }
 
-  json(res, 200, {
-    success: true,
-    application: { ...application, status: 'Approved', approval_date: approvalDate, member_id: memberId },
-    credentials: { memberId, setupLinkSent: true }
-  });
+    logStep('query.applications.fetch.start');
+    const { data: application, error: fetchError } = await supabase.from('applications').select('*').eq('id', id).single();
+    logStep('query.applications.fetch.result', { found: Boolean(application), error: fetchError ? serializeError(fetchError) : null });
+    if (fetchError || !application) return json(res, 404, { error: 'Application not found.' });
+
+    if (String(application.status || '').toLowerCase() === 'approved') {
+      logStep('workflow.idempotent_already_approved', { existingMemberId: application.member_id || null });
+      return json(res, 200, {
+        success: true,
+        application,
+        credentials: { memberId: application.member_id || null, setupLinkSent: true },
+        alreadyApproved: true
+      });
+    }
+
+    const approvalDate = new Date().toISOString();
+    const formData = application.form_data || {};
+    const name = formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName || 'Applicant';
+    const email = (formData.emailId || formData.email || 'applicant@aic-aiml.org').trim().toLowerCase();
+
+    const memberId = application.member_id && /^AICAIML-\d{4}-\d{4}$/.test(application.member_id)
+      ? application.member_id
+      : await generateMembershipId(logStep);
+    logStep('workflow.membership_id.resolved', { memberId });
+
+    const memberUserResult = await ensureMemberUser({ name, email, membershipId: memberId }, logStep);
+    const memberUser = memberUserResult.user;
+    memberMutation = memberUserResult.mutation;
+    logStep('workflow.member_user.ready', { userId: memberUser.id, created: Boolean(memberMutation?.created) });
+
+    const setup = await issuePasswordSetupToken(memberUser.id, logStep);
+    const updateResult = await updateRowCompatById(
+      'applications',
+      id,
+      {
+        status: 'Approved',
+        reviewed_by: admin.id,
+        reviewed_at: new Date().toISOString(),
+        approval_date: approvalDate,
+        member_id: memberId,
+        updated_at: new Date().toISOString()
+      },
+      ['member_id', 'approval_date', 'reviewed_at', 'reviewed_by', 'updated_at'],
+      logStep
+    );
+    if (updateResult.error) {
+      throw new Error(`Application update failed: ${updateResult.error.message}`);
+    }
+
+    const baseUrl = process.env.BASE_URL || 'https://www.aic-aiml.org';
+    const setPasswordLink = setup.mode === 'setup_link'
+      ? `${baseUrl}/#set-password?token=${encodeURIComponent(setup.rawToken)}`
+      : null;
+    const membershipType = String(application.category || application.membership_category || 'member').toUpperCase();
+    let emailBody = `Dear ${name},\n\nCongratulations! Your application for AICAIML ${membershipType} membership has been reviewed and approved by the Membership Board.\n\nAPPROVAL DETAILS:\n - Membership ID: ${memberId}\n - Application ID: ${application.id}\n - Membership Type: ${membershipType}\n - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\n`;
+
+    if (setup.mode === 'setup_link') {
+      emailBody += `SECURE ACCOUNT SETUP:\n 1. Set your member portal password using the secure link below:\n ${setPasswordLink}\n 2. This link expires in 48 hours for your account security.\n 3. After setting the password, sign in at: ${baseUrl}/#member-login\n\nPlease keep your credentials private and do not share them.`;
+    } else {
+      emailBody += `LOGIN CREDENTIALS (LEGACY SETUP MODE):\n - Username: ${email}\n - Temporary Password: ${setup.tempPassword}\n\nPlease sign in at ${baseUrl}/#member-login and change your password immediately after first login.`;
+    }
+
+    emailBody += `\n\nWelcome to India's premier AI/ML advancements ecosystem!\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
+
+    let emailSent = false;
+    try {
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_APP_PASSWORD }
+      });
+      if (process.env.EMAIL_USER && process.env.EMAIL_APP_PASSWORD && process.env.EMAIL_USER !== 'your-email@gmail.com') {
+        await transporter.sendMail({ from: `"AICAIML Council" <${process.env.EMAIL_USER}>`, to: email, subject: `[AICAIML] Membership Application Approved - ${application.membership_no}`, text: emailBody });
+        emailSent = true;
+      }
+      logStep('notification.email.result', { sent: emailSent, mode: setup.mode });
+    } catch (err) {
+      logStep('notification.email.error', { error: serializeError(err), mode: setup.mode });
+    }
+
+    logStep('request.success', { durationMs: Date.now() - startedAt, mode: setup.mode, emailSent });
+    json(res, 200, {
+      success: true,
+      application: { ...application, status: 'Approved', approval_date: approvalDate, member_id: memberId },
+      credentials: {
+        memberId,
+        setupLinkSent: setup.mode === 'setup_link',
+        deliveryMode: setup.mode,
+        temporaryPasswordIssued: setup.mode === 'temporary_password'
+      },
+      traceId
+    });
+  } catch (err) {
+    logStep('request.error', { durationMs: Date.now() - startedAt, error: serializeError(err) });
+    await rollbackMemberUserMutation(memberMutation, logStep);
+    throw err;
+  }
 }
 
 async function handleRejectApplication(req, res, id) {
@@ -746,78 +947,78 @@ export default async function handler(req, res) {
 
   try {
     if (segments.length === 0 || segments[0] === 'overview') {
-      if (req.method === 'GET') return handleOverview(req, res);
+      if (req.method === 'GET') return await handleOverview(req, res);
       return json(res, 405, { error: 'Method not allowed.' });
     }
 
     if (segments[0] === 'enquiries') {
-      if (req.method === 'GET') return handleEnquiries(req, res);
+      if (req.method === 'GET') return await handleEnquiries(req, res);
       return json(res, 405, { error: 'Method not allowed.' });
     }
 
     if (segments[0] === 'applications') {
-      if (req.method === 'GET') return handleApplications(req, res);
+      if (req.method === 'GET') return await handleApplications(req, res);
       if (req.method === 'POST') {
-        if (segments[2] === 'approve' && segments[1]) return handleApproveApplication(req, res, segments[1]);
-        if (segments[2] === 'reject' && segments[1]) return handleRejectApplication(req, res, segments[1]);
+        if (segments[2] === 'approve' && segments[1]) return await handleApproveApplication(req, res, segments[1]);
+        if (segments[2] === 'reject' && segments[1]) return await handleRejectApplication(req, res, segments[1]);
         return json(res, 400, { error: 'Expected /approve or /reject with an application ID.' });
       }
       return json(res, 405, { error: 'Method not allowed.' });
     }
 
     if (segments[0] === 'event-registrations') {
-      if (req.method === 'GET') return handleEventRegistrations(req, res);
+      if (req.method === 'GET') return await handleEventRegistrations(req, res);
       return json(res, 405, { error: 'Method not allowed.' });
     }
 
     if (segments[0] === 'memberships') {
-      if (req.method === 'GET') return handleMemberships(req, res);
+      if (req.method === 'GET') return await handleMemberships(req, res);
       return json(res, 405, { error: 'Method not allowed.' });
     }
 
     if (segments[0] === 'users') {
-      if (req.method === 'GET') return handleUsers(req, res);
-      if (req.method === 'POST') return handleCreateUser(req, res);
+      if (req.method === 'GET') return await handleUsers(req, res);
+      if (req.method === 'POST') return await handleCreateUser(req, res);
       return json(res, 405, { error: 'Method not allowed.' });
     }
 
     if (segments[0] === 'diagnostics') {
-      if (req.method === 'GET') return handleDiagnostics(req, res);
+      if (req.method === 'GET') return await handleDiagnostics(req, res);
       return json(res, 405, { error: 'Method not allowed.' });
     }
 
     if (segments[0] === 'courses') {
-      if (segments.length === 1) return handleCourses(req, res);
-      if (segments.length === 2) return handleDeleteCourse(req, res, segments[1]);
+      if (segments.length === 1) return await handleCourses(req, res);
+      if (segments.length === 2) return await handleDeleteCourse(req, res, segments[1]);
       return json(res, 404, { error: 'Not found.' });
     }
 
     if (segments[0] === 'projects') {
-      if (segments.length === 1) return handleProjects(req, res);
-      if (segments.length === 2) return handleDeleteProject(req, res, segments[1]);
+      if (segments.length === 1) return await handleProjects(req, res);
+      if (segments.length === 2) return await handleDeleteProject(req, res, segments[1]);
       return json(res, 404, { error: 'Not found.' });
     }
 
     if (segments[0] === 'events') {
-      if (segments.length === 1) return handleEvents(req, res);
-      if (segments.length === 2) return handleDeleteEvent(req, res, segments[1]);
+      if (segments.length === 1) return await handleEvents(req, res);
+      if (segments.length === 2) return await handleDeleteEvent(req, res, segments[1]);
       return json(res, 404, { error: 'Not found.' });
     }
 
     if (segments[0] === 'partners') {
-      if (segments.length === 1) return handlePartners(req, res);
-      if (segments.length === 2) return handleDeletePartner(req, res, segments[1]);
+      if (segments.length === 1) return await handlePartners(req, res);
+      if (segments.length === 2) return await handleDeletePartner(req, res, segments[1]);
       return json(res, 404, { error: 'Not found.' });
     }
 
     if (segments[0] === 'testimonials') {
-      if (segments.length === 1) return handleTestimonials(req, res);
-      if (segments.length === 2) return handleDeleteTestimonial(req, res, segments[1]);
+      if (segments.length === 1) return await handleTestimonials(req, res);
+      if (segments.length === 2) return await handleDeleteTestimonial(req, res, segments[1]);
       return json(res, 404, { error: 'Not found.' });
     }
 
     if (segments[0] === 'upload') {
-      if (req.method === 'POST') return handleUpload(req, res);
+      if (req.method === 'POST') return await handleUpload(req, res);
       return json(res, 405, { error: 'Method not allowed.' });
     }
 
