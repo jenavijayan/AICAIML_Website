@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 
 const supabaseUrl = process.env.SUPABASE_URL?.trim();
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
@@ -42,6 +43,9 @@ export const supabase = SUPABASE_ENABLED
       auth: {
         persistSession: false,
         autoRefreshToken: false
+      },
+      realtime: {
+        transport: WebSocket
       }
     })
   : createDisabledSupabaseClient();
