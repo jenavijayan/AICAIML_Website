@@ -85,6 +85,14 @@ function errorMentionsColumn(error, columnName) {
   return message.includes(columnName.toLowerCase());
 }
 
+function isDuplicateRowsError(error) {
+  if (!error) return false;
+  const message = String(error.message || '').toLowerCase();
+  return (
+    message.includes('multiple') && (message.includes('rows') || message.includes('results'))
+  ) || error.code === 'PGRST116';
+}
+
 async function selectWithOrderFallback(table, primaryOrderColumn) {
   let result = await supabase.from(table).select('*').order(primaryOrderColumn, { ascending: false });
   if (!result.error) return result;
@@ -153,6 +161,38 @@ async function insertRowCompat(table, payload, optionalColumns, logStep) {
     removedColumns.push(missingOptional);
     logStep?.('query.insert.drop_optional_column', { table, droppedColumn: missingOptional });
   }
+}
+
+async function findUserByEmailCompat(email, logStep) {
+  const normalized = String(email || '').trim().toLowerCase();
+  logStep?.('query.users.by_email_primary.start', { email: normalized });
+
+  const primary = await supabase.from('users').select('*').eq('email', normalized).maybeSingle();
+  logStep?.('query.users.by_email_primary.result', {
+    found: Boolean(primary.data),
+    error: primary.error ? serializeError(primary.error) : null
+  });
+
+  if (!primary.error) {
+    return primary.data || null;
+  }
+
+  if (!isDuplicateRowsError(primary.error)) {
+    failIfSupabaseError(primary, 'Failed to check existing member user');
+  }
+
+  logStep?.('query.users.by_email_duplicates.detected', { email: normalized });
+
+  let list = await supabase.from('users').select('*').eq('email', normalized).order('created_at', { ascending: false }).limit(20);
+  if (list.error && errorMentionsColumn(list.error, 'created_at')) {
+    list = await supabase.from('users').select('*').eq('email', normalized).limit(20);
+  }
+  failIfSupabaseError(list, 'Failed to list duplicate member users by email');
+
+  const rows = Array.isArray(list.data) ? list.data : [];
+  const preferred = rows.find((row) => String(row.role || '').toLowerCase() === 'member') || rows[0] || null;
+  logStep?.('query.users.by_email_duplicates.resolved', { count: rows.length, selectedUserId: preferred?.id || null });
+  return preferred;
 }
 
 async function updateApplicationCompat(id, payload) {
@@ -229,10 +269,8 @@ async function generateMembershipId(logStep) {
 async function ensureMemberUser({ name, email, membershipId }, logStep) {
   const mutation = { created: false, userId: null, previousUser: null };
 
-  logStep?.('query.users.by_email.start', { email });
-  let { data: existingUser, error: existingUserError } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
-  logStep?.('query.users.by_email.result', { found: Boolean(existingUser), error: existingUserError ? serializeError(existingUserError) : null });
-  failIfSupabaseError({ error: existingUserError }, 'Failed to check existing member user');
+  let existingUser = await findUserByEmailCompat(email, logStep);
+  logStep?.('query.users.by_email.result', { found: Boolean(existingUser), selectedUserId: existingUser?.id || null });
 
   if (!existingUser) {
     const tempPassword = crypto.randomBytes(24).toString('base64url');
@@ -280,6 +318,29 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
         ['membership_no'],
         logStep
       );
+    }
+
+    if (createRes.error) {
+      const message = String(createRes.error.message || '').toLowerCase();
+      if (createRes.error.code === '23505' || message.includes('duplicate') || message.includes('already exists')) {
+        logStep?.('query.users.insert.duplicate_retry', { email });
+        existingUser = await findUserByEmailCompat(email, logStep);
+        if (existingUser && existingUser.id) {
+          mutation.created = false;
+          mutation.userId = existingUser.id;
+          mutation.previousUser = {
+            role: existingUser.role,
+            membership_no: existingUser.membership_no,
+            membership_status: existingUser.membership_status,
+            name: existingUser.name,
+            password_hash: existingUser.password_hash,
+            password_salt: existingUser.password_salt,
+            must_reset_password: existingUser.must_reset_password,
+            updated_at: existingUser.updated_at
+          };
+          return { user: existingUser, mutation };
+        }
+      }
     }
 
     logStep?.('query.users.insert.result', { error: createRes.error ? serializeError(createRes.error) : null, userId: createRes.data?.id || null });

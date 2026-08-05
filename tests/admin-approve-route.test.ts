@@ -5,6 +5,8 @@ type AnyRow = Record<string, any>;
 const state: {
   application: AnyRow | null;
   existingUser: AnyRow | null;
+  duplicateUsers: AnyRow[];
+  usersMaybeSingleDuplicateError: boolean;
   usersMembershipNoMissing: boolean;
   usersUpdateCalls: Array<{ payload: AnyRow; id: string }>;
   usersDeleteCalls: Array<{ id: string }>;
@@ -13,6 +15,8 @@ const state: {
 } = {
   application: null,
   existingUser: null,
+  duplicateUsers: [],
+  usersMaybeSingleDuplicateError: false,
   usersMembershipNoMissing: false,
   usersUpdateCalls: [],
   usersDeleteCalls: [],
@@ -76,10 +80,17 @@ function createSupabaseMock() {
             eq: (column: string, value: string) => ({
               maybeSingle: async () => {
                 if (column === 'email') {
+                  if (state.usersMaybeSingleDuplicateError) {
+                    return { data: null, error: { message: 'JSON object requested, multiple (or no) rows returned', code: 'PGRST116' } };
+                  }
                   return { data: state.existingUser, error: null };
                 }
                 return { data: null, error: null };
-              }
+              },
+              order: (_column2: string, _opts: AnyRow) => ({
+                limit: async () => ({ data: state.duplicateUsers, error: null })
+              }),
+              limit: async () => ({ data: state.duplicateUsers, error: null })
             }),
             like: async () => {
               if (state.usersMembershipNoMissing) {
@@ -185,6 +196,8 @@ describe('admin approve route compatibility', () => {
       }
     };
     state.existingUser = null;
+    state.duplicateUsers = [];
+    state.usersMaybeSingleDuplicateError = false;
     state.usersMembershipNoMissing = false;
     state.usersUpdateCalls = [];
     state.usersDeleteCalls = [];
@@ -332,5 +345,46 @@ describe('admin approve route compatibility', () => {
     expect(res.statusCode).toBe(200);
     expect(res.payload?.success).toBe(true);
     expect(res.payload?.credentials?.memberId).toMatch(/^AICAIML-\d{4}-\d{4}$/);
+  });
+
+  it('approves successfully when duplicate member users exist for same email', async () => {
+    state.usersMaybeSingleDuplicateError = true;
+    state.duplicateUsers = [
+      {
+        id: 'dup-user-2',
+        email: 'jena@example.com',
+        name: 'Duplicate Two',
+        role: 'member',
+        membership_status: 'active',
+        password_hash: 'hash2',
+        password_salt: 'salt2',
+        membership_no: null
+      },
+      {
+        id: 'dup-user-1',
+        email: 'jena@example.com',
+        name: 'Duplicate One',
+        role: 'member',
+        membership_status: 'active',
+        password_hash: 'hash1',
+        password_salt: 'salt1',
+        membership_no: null
+      }
+    ];
+
+    const { default: handler } = await import('../server-lib/api-routes/admin/[[...path]].js');
+    const req: any = {
+      method: 'POST',
+      query: { path: ['applications', 'app-1', 'approve'] },
+      headers: { cookie: 'aicaiml_session=session-token' }
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload?.success).toBe(true);
+    const touchedDuplicate = state.usersUpdateCalls.some((call) => call.id === 'dup-user-2' || call.id === 'dup-user-1');
+    expect(touchedDuplicate).toBe(true);
   });
 });
