@@ -809,11 +809,20 @@ export async function startServer() {
         }
         userRow = createdQuery.data;
       } else {
+        let resetSeed: { hash: string; salt: string } | null = null;
+        if (!userRow.password_hash || !userRow.password_salt) {
+          const tempPassword = crypto.randomBytes(24).toString('base64url');
+          resetSeed = hashPassword(tempPassword);
+        }
+
         const syncUserRes = await supabase.from('users').update({
           role: 'member',
           membership_no: userRow.membership_no || memberId,
           membership_status: 'active',
           name: userRow.name || name,
+          password_hash: resetSeed ? resetSeed.hash : userRow.password_hash,
+          password_salt: resetSeed ? resetSeed.salt : userRow.password_salt,
+          must_reset_password: true,
           updated_at: new Date().toISOString()
         }).eq('id', userRow.id).select('*').single();
         if (!syncUserRes.error && syncUserRes.data) {

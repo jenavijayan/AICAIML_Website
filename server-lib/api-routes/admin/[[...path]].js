@@ -158,11 +158,20 @@ async function ensureMemberUser({ name, email, membershipId }) {
     failIfSupabaseError(createRes, 'Failed to create approved member user');
     existingUser = createRes.data;
   } else {
+    let resetSeed = null;
+    if (!existingUser.password_hash || !existingUser.password_salt) {
+      const tempPassword = crypto.randomBytes(24).toString('base64url');
+      resetSeed = hashPassword(tempPassword);
+    }
+
     let updateRes = await supabase.from('users').update({
       role: 'member',
       membership_no: existingUser.membership_no || membershipId,
       membership_status: 'active',
       name: existingUser.name || name,
+      password_hash: resetSeed ? resetSeed.hash : existingUser.password_hash,
+      password_salt: resetSeed ? resetSeed.salt : existingUser.password_salt,
+      must_reset_password: true,
       updated_at: new Date().toISOString()
     }).eq('id', existingUser.id).select('*').single();
 
@@ -171,7 +180,10 @@ async function ensureMemberUser({ name, email, membershipId }) {
         role: 'member',
         membership_no: existingUser.membership_no || membershipId,
         membership_status: 'active',
-        name: existingUser.name || name
+        name: existingUser.name || name,
+        password_hash: resetSeed ? resetSeed.hash : existingUser.password_hash,
+        password_salt: resetSeed ? resetSeed.salt : existingUser.password_salt,
+        must_reset_password: true
       }).eq('id', existingUser.id).select('*').single();
     }
 
