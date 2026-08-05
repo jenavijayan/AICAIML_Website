@@ -5,6 +5,7 @@ type AnyRow = Record<string, any>;
 const state: {
   application: AnyRow | null;
   existingUser: AnyRow | null;
+  usersMembershipNoMissing: boolean;
   usersUpdateCalls: Array<{ payload: AnyRow; id: string }>;
   usersDeleteCalls: Array<{ id: string }>;
   applicationsUpdateCalls: Array<{ payload: AnyRow; id: string }>;
@@ -12,6 +13,7 @@ const state: {
 } = {
   application: null,
   existingUser: null,
+  usersMembershipNoMissing: false,
   usersUpdateCalls: [],
   usersDeleteCalls: [],
   applicationsUpdateCalls: [],
@@ -75,11 +77,21 @@ function createSupabaseMock() {
                 return { data: null, error: null };
               }
             }),
-            like: async () => ({ data: [], error: null })
+            like: async () => {
+              if (state.usersMembershipNoMissing) {
+                return { data: null, error: { message: "column users.membership_no does not exist", code: '42703' } };
+              }
+              return { data: [], error: null };
+            }
           }),
           insert: (payload: AnyRow) => ({
             select: () => ({
-              single: async () => ({ data: { ...payload }, error: null })
+              single: async () => {
+                if (state.usersMembershipNoMissing && Object.prototype.hasOwnProperty.call(payload, 'membership_no')) {
+                  return { data: null, error: { message: "column users.membership_no does not exist", code: '42703' } };
+                }
+                return { data: { ...payload }, error: null };
+              }
             })
           }),
           update: (payload: AnyRow) => ({
@@ -169,6 +181,7 @@ describe('admin approve route compatibility', () => {
       }
     };
     state.existingUser = null;
+    state.usersMembershipNoMissing = false;
     state.usersUpdateCalls = [];
     state.usersDeleteCalls = [];
     state.applicationsUpdateCalls = [];
@@ -270,5 +283,23 @@ describe('admin approve route compatibility', () => {
       (call) => call.id === 'app-1' && !Object.prototype.hasOwnProperty.call(call.payload, 'rejection_reason')
     );
     expect(hadRetryWithoutReason).toBe(true);
+  });
+
+  it('approves successfully when users.membership_no column is missing', async () => {
+    state.usersMembershipNoMissing = true;
+
+    const { default: handler } = await import('../server-lib/api-routes/admin/[[...path]].js');
+    const req: any = {
+      method: 'POST',
+      query: { path: ['applications', 'app-1', 'approve'] },
+      headers: { cookie: 'aicaiml_session=session-token' }
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload?.success).toBe(true);
+    expect(res.payload?.credentials?.memberId).toMatch(/^AICAIML-\d{4}-\d{4}$/);
   });
 });

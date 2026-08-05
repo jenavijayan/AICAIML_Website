@@ -131,6 +131,30 @@ async function updateRowCompatById(table, id, payload, optionalColumns, logStep)
   }
 }
 
+async function insertRowCompat(table, payload, optionalColumns, logStep) {
+  const current = { ...payload };
+  const removedColumns = [];
+
+  while (true) {
+    logStep?.('query.insert.start', { table, keys: Object.keys(current) });
+    const result = await supabase.from(table).insert(current).select('*').single();
+    if (!result.error) {
+      logStep?.('query.insert.success', { table, keys: Object.keys(current), removedColumns, rowId: result.data?.id || null });
+      return { data: result.data, error: null, appliedPayload: current, removedColumns };
+    }
+
+    logStep?.('query.insert.error', { table, error: serializeError(result.error), keys: Object.keys(current) });
+    const missingOptional = optionalColumns.find((col) => Object.prototype.hasOwnProperty.call(current, col) && errorMentionsColumn(result.error, col));
+    if (!missingOptional) {
+      return { data: null, error: result.error, appliedPayload: current, removedColumns };
+    }
+
+    delete current[missingOptional];
+    removedColumns.push(missingOptional);
+    logStep?.('query.insert.drop_optional_column', { table, droppedColumn: missingOptional });
+  }
+}
+
 async function updateApplicationCompat(id, payload) {
   const optionalColumns = ['member_id', 'approval_date', 'rejection_reason', 'reviewed_at', 'reviewed_by', 'updated_at'];
   return updateRowCompatById('applications', id, payload, optionalColumns);
@@ -154,8 +178,24 @@ async function generateMembershipId(logStep) {
   const pattern = `AICAIML-${year}-%`;
 
   logStep?.('query.membership_sequence.users.start', { pattern });
-  const usersRes = await supabase.from('users').select('membership_no').like('membership_no', pattern);
+  let usersRes = await supabase.from('users').select('membership_no').like('membership_no', pattern);
   logStep?.('query.membership_sequence.users.result', { rowCount: (usersRes.data || []).length, error: usersRes.error ? serializeError(usersRes.error) : null });
+
+  if (usersRes.error && String(usersRes.error.message || '').toLowerCase().includes('membership_no')) {
+    logStep?.('query.membership_sequence.users.missing_column', { column: 'membership_no' });
+    usersRes = { data: [], error: null };
+  }
+
+  let membershipsRes = { data: [], error: null };
+  if (!usersRes.data || usersRes.data.length === 0) {
+    logStep?.('query.membership_sequence.memberships.start', { pattern });
+    membershipsRes = await supabase.from('memberships').select('membership_no').like('membership_no', pattern);
+    logStep?.('query.membership_sequence.memberships.result', { rowCount: (membershipsRes.data || []).length, error: membershipsRes.error ? serializeError(membershipsRes.error) : null });
+    if (membershipsRes.error && String(membershipsRes.error.message || '').toLowerCase().includes('membership_no')) {
+      logStep?.('query.membership_sequence.memberships.missing_column', { column: 'membership_no' });
+      membershipsRes = { data: [], error: null };
+    }
+  }
 
   logStep?.('query.membership_sequence.applications.start', { pattern });
   let appsRes = await supabase.from('applications').select('member_id').like('member_id', pattern);
@@ -167,11 +207,15 @@ async function generateMembershipId(logStep) {
   }
 
   failIfSupabaseError(usersRes, 'Failed to read users for membership ID generation');
+  failIfSupabaseError(membershipsRes, 'Failed to read memberships for membership ID generation');
   failIfSupabaseError(appsRes, 'Failed to read applications for membership ID generation');
 
   let maxSeq = 0;
 
   for (const row of usersRes.data || []) {
+    maxSeq = Math.max(maxSeq, parseMembershipSequence(row.membership_no, year));
+  }
+  for (const row of membershipsRes.data || []) {
     maxSeq = Math.max(maxSeq, parseMembershipSequence(row.membership_no, year));
   }
   for (const row of appsRes.data || []) {
@@ -196,7 +240,9 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
     const now = new Date().toISOString();
     const newUserId = 'mem-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     logStep?.('query.users.insert.start', { email, generatedUserId: newUserId });
-    let createRes = await supabase.from('users').insert({
+    let createRes = await insertRowCompat(
+      'users',
+      {
       id: newUserId,
       name,
       email,
@@ -210,11 +256,16 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
       permissions: '[]',
       created_at: now,
       updated_at: now
-    }).select('*').single();
+      },
+      ['membership_no', 'membership_plan', 'must_reset_password', 'updated_at'],
+      logStep
+    );
 
     // Fallback payload for deployments with older users schema.
     if (createRes.error) {
-      createRes = await supabase.from('users').insert({
+      createRes = await insertRowCompat(
+        'users',
+        {
         id: newUserId,
         name,
         email,
@@ -225,7 +276,10 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
         membership_status: 'active',
         permissions: '[]',
         created_at: now
-      }).select('*').single();
+        },
+        ['membership_no'],
+        logStep
+      );
     }
 
     logStep?.('query.users.insert.result', { error: createRes.error ? serializeError(createRes.error) : null, userId: createRes.data?.id || null });
@@ -254,7 +308,10 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
     }
 
     logStep?.('query.users.update_existing.start', { userId: existingUser.id });
-    let updateRes = await supabase.from('users').update({
+    let updateRes = await updateRowCompatById(
+      'users',
+      existingUser.id,
+      {
       role: 'member',
       membership_no: existingUser.membership_no || membershipId,
       membership_status: 'active',
@@ -263,10 +320,16 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
       password_salt: resetSeed ? resetSeed.salt : existingUser.password_salt,
       must_reset_password: true,
       updated_at: new Date().toISOString()
-    }).eq('id', existingUser.id).select('*').single();
+      },
+      ['membership_no', 'must_reset_password', 'updated_at'],
+      logStep
+    );
 
     if (updateRes.error) {
-      updateRes = await supabase.from('users').update({
+      updateRes = await updateRowCompatById(
+        'users',
+        existingUser.id,
+        {
         role: 'member',
         membership_no: existingUser.membership_no || membershipId,
         membership_status: 'active',
@@ -274,7 +337,10 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
         password_hash: resetSeed ? resetSeed.hash : existingUser.password_hash,
         password_salt: resetSeed ? resetSeed.salt : existingUser.password_salt,
         must_reset_password: true
-      }).eq('id', existingUser.id).select('*').single();
+        },
+        ['membership_no', 'must_reset_password'],
+        logStep
+      );
     }
 
     logStep?.('query.users.update_existing.result', { userId: existingUser.id, error: updateRes.error ? serializeError(updateRes.error) : null });
@@ -313,7 +379,7 @@ async function rollbackMemberUserMutation(mutation, logStep) {
     updated_at: mutation.previousUser.updated_at || new Date().toISOString()
   };
 
-  const restore = await updateRowCompatById('users', mutation.userId, restorePayload, ['must_reset_password', 'updated_at'], logStep);
+  const restore = await updateRowCompatById('users', mutation.userId, restorePayload, ['membership_no', 'must_reset_password', 'updated_at'], logStep);
   if (restore.error) {
     logStep?.('query.users.rollback_restore.error', { userId: mutation.userId, error: serializeError(restore.error) });
   } else {
