@@ -1,5 +1,6 @@
 import healthHandler from '../server-lib/api-routes/health.js';
 import authLoginHandler from '../server-lib/api-routes/auth/login.js';
+import authGoogleHandler from '../server-lib/api-routes/auth/google.js';
 import authLogoutHandler from '../server-lib/api-routes/auth/logout.js';
 import authMeHandler from '../server-lib/api-routes/auth/me.js';
 import verifyHandler from '../server-lib/api-routes/verify.js';
@@ -20,6 +21,7 @@ import eventsHandler from '../server-lib/api-routes/events.js';
 import certificatesIssueHandler from '../server-lib/api-routes/certificates/issue.js';
 import adminUploadHandler from '../server-lib/api-routes/admin/upload.js';
 import adminHandler from '../server-lib/api-routes/admin/[[...path]].js';
+import { parseJsonBody, resetTestAccount } from '../server-lib/authFallback.js';
 
 function resolvePath(req) {
   const segments = req.query && req.query.path;
@@ -56,10 +58,16 @@ export default async function handler(req, res) {
   if (method === 'POST' && (path === '/auth/login' || path === '/api/auth/login' || path.endsWith('/auth/login'))) {
     return authLoginHandler(req, res);
   }
+  if (method === 'POST' && (path === '/auth/google' || path === '/api/auth/google' || path.endsWith('/auth/google'))) {
+    return authGoogleHandler(req, res);
+  }
   if (method === 'POST' && (path === '/auth/logout' || path === '/api/auth/logout' || path.endsWith('/auth/logout'))) {
     return authLogoutHandler(req, res);
   }
   if (method === 'GET' && (path === '/auth/me' || path === '/api/auth/me' || path.endsWith('/auth/me'))) {
+    return authMeHandler(req, res);
+  }
+  if (method === 'GET' && (path === '/member/data' || path === '/api/member/data' || path.endsWith('/member/data'))) {
     return authMeHandler(req, res);
   }
 
@@ -128,9 +136,27 @@ export default async function handler(req, res) {
     return adminHandler(req, res);
   }
 
-  if ((path === '/auth/change-password' || path === '/api/auth/change-password') && method === 'GET') {
-    return res.status(405).json({ error: 'Method not allowed.' });
-  }
+   if ((path === '/auth/change-password' || path === '/api/auth/change-password') && method === 'GET') {
+     return res.status(405).json({ error: 'Method not allowed.' });
+   }
 
-  return res.status(404).json({ error: 'Not found.' });
+   // Dev-only: reset a test account
+   if (method === 'POST' && (path === '/dev/reset-account' || path === '/api/dev/reset-account' || path.endsWith('/dev/reset-account'))) {
+     if (process.env.NODE_ENV !== 'development') {
+       return res.status(404).json({ error: 'Not found.' });
+     }
+     const body = await parseJsonBody(req);
+     const { email } = body;
+     if (!email) {
+       return res.status(400).json({ error: 'Email is required.' });
+     }
+     const cleanEmail = String(email).trim().toLowerCase();
+     const result = await resetTestAccount(cleanEmail);
+     if (process.env.NODE_ENV === 'development') {
+       console.log(`[DEV RESET] Cleared test account for ${cleanEmail}: success=${result.success}`);
+     }
+     return res.status(200).json(result);
+   }
+
+   return res.status(404).json({ error: 'Not found.' });
 }

@@ -20,6 +20,8 @@ export default function MembershipForms({ category, onBack }: FormProps) {
   const [error, setError] = useState<string | null>(null);
   const [successData, setSuccessData] = useState<any | null>(null);
   const [verified, setVerified] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const isDev = import.meta.env.DEV || import.meta.env.MODE === 'development';
 
   // Anti-spam Honeypot field
   const [honeypot, setHoneypot] = useState('');
@@ -184,6 +186,38 @@ export default function MembershipForms({ category, onBack }: FormProps) {
     setSuccessData(null);
     setVerified(false);
     resetVerification();
+  };
+
+  const handleResetTestAccount = async () => {
+    if (!commonForm.email) {
+      setError('Please enter an email address to reset.');
+      return;
+    }
+    if (!confirm(`Reset ALL test data for ${commonForm.email}? This cannot be undone.`)) {
+      return;
+    }
+    setResetting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/dev/reset-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: commonForm.email })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Reset failed.');
+      }
+      setVerified(false);
+      resetVerification();
+      setSuccessData(null);
+      console.log('[DEV RESET] Success:', data);
+      setTimeout(() => setResetting(false), 30000);
+    } catch (err: any) {
+      setError(err.message || 'Reset failed. Try again.');
+    } finally {
+      setResetting(false);
+    }
   };
 
   // Submit Handler
@@ -351,14 +385,26 @@ export default function MembershipForms({ category, onBack }: FormProps) {
 
           <div className="text-center py-4 space-y-3">
             <p className="text-xs text-slate-500">
-              Note: Under AICAIML Bylaws, Phase 1 applications do not require immediate fee payment. Your login credentials to access the digital membership portal will be issued upon successful verification.
+               Note: Under AICAIML Bylaws, Phase 1 applications do not require immediate fee payment. Upon successful verification, you will receive an approval email with instructions to sign in using your Google account — no password required.
             </p>
             <Button icon={ArrowLeft} onClick={onBack}>
               Return to Membership Categories
             </Button>
           </div>
-        </div>
-      </div>
+             </div>
+             {isDev && commonForm.email && (
+               <div className="sm:col-span-2 pt-2">
+                 <button
+                   type="button"
+                   onClick={handleResetTestAccount}
+                   disabled={resetting}
+                   className="text-xs px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-md font-medium disabled:opacity-50 transition-colors"
+                 >
+                   {resetting ? 'Resetting...' : 'Reset Test Account (Dev)'}
+                 </button>
+               </div>
+             )}
+           </div>
     );
   }
 

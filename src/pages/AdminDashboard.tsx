@@ -211,13 +211,9 @@ export default function AdminDashboard() {
   const handleApprove = useCallback(async (app: AppRow) => {
     setAppActionLoading(app.id);
     try {
-      const result = await postJson(`/api/admin/applications/${app.id}/approve`, {});
-      if (result.credentials) {
-        setActionMessage(`Application ${app.id} approved. Member ID: ${result.credentials.memberId} — credentials emailed to ${app.email}.`);
-      } else {
-        setActionMessage(`Application ${app.id} approved. Member credentials already exist.`);
-      }
-      setActionMessageIsError(false);
+       const result = await postJson(`/api/admin/applications/${app.id}/approve`, {});
+       setActionMessage(`Application ${app.id} approved. Member can sign in with Google at ${app.email}.`);
+       setActionMessageIsError(false);
       await loadApplications();
       setTimeout(() => setActionMessage(null), 5000);
     } catch (err: any) {
@@ -585,7 +581,7 @@ export default function AdminDashboard() {
                                           <>
                                             <button
                                               onClick={() => {
-                                                if (confirm(`Approve application ${app.id}? Login credentials will be generated and emailed to ${app.email}.`)) {
+                                                if (confirm(`Approve application ${app.id}? The member will sign in with Google using ${app.email}.`)) {
                                                   handleApprove(app);
                                                 }
                                               }}

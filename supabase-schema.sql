@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS public.users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  password_salt TEXT NOT NULL,
+  password_hash TEXT,
+  password_salt TEXT,
   password_reset_token TEXT,
   password_reset_expires_at TEXT,
   two_factor_secret TEXT,
@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   membership_expires_at TEXT,
   photo_url TEXT,
   phone TEXT,
+  google_id TEXT UNIQUE,
   designation TEXT,
   organization TEXT,
   department TEXT,
@@ -44,6 +45,11 @@ CREATE TABLE IF NOT EXISTS public.users (
   updated_at TEXT NOT NULL,
   deleted_at TEXT
 );
+
+-- Migration for existing databases: make password columns nullable (Google SSO users have no password)
+ALTER TABLE public.users ALTER COLUMN password_hash DROP NOT NULL;
+ALTER TABLE public.users ALTER COLUMN password_salt DROP NOT NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS google_id TEXT UNIQUE;
 
 -- ============================================
 -- 2. SESSIONS (existing)

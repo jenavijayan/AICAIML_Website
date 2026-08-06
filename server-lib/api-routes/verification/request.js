@@ -54,11 +54,15 @@ export default async function handler(req, res) {
     }
 
     const cleanEmail = String(email).trim().toLowerCase();
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+     const code = String(Math.floor(100000 + Math.random() * 900000));
     const emailBody = `Your AICAIML verification code is: ${code}\n\nThis code expires in 10 minutes.`;
     const { sent } = await sendEmail(cleanEmail, 'AICAIML Email Verification', emailBody);
-
-    res.json({ success: true, sent, message: 'Verification code sent.', devCode: code });
+    const response = { success: true, sent, message: 'Verification code sent.' };
+    if (process.env.NODE_ENV === 'development') {
+      response.devCode = code;
+      console.log(`[DEV OTP] Verification code for ${cleanEmail}: ${code}`);
+    }
+    res.json(response);
   } catch (err) {
     console.error('Verification request error:', err);
     res.status(500).json({ error: err.message || 'Failed to send verification code.' });

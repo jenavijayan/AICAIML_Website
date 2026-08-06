@@ -54,6 +54,7 @@ export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
     { id: 'benefits-view', label: 'Benefits' },
     { id: 'contact', label: 'Contact' },
     ...(user?.role === 'admin' ? [{ id: 'admin', label: 'Admin' }] : []),
+    ...(user && user.role !== 'admin' ? [{ id: 'member', label: 'Member Portal' }] : []),
     ...(user ? [] : [{ id: 'login', label: 'Login' }])
   ];
 

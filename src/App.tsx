@@ -27,6 +27,7 @@ const Learners = lazy(() => import('./pages/Learners'));
 const EventsProjects = lazy(() => import('./pages/EventsProjects'));
 const Benefits = lazy(() => import('./pages/Benefits'));
 const Login = lazy(() => import('./pages/Login'));
+const MemberPortal = lazy(() => import('./pages/MemberPortal'));
 const Legal = lazy(() => import('./pages/Legal'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const MembershipForms = lazy(() => import('./components/MembershipForms'));
@@ -196,7 +197,7 @@ function AppShell() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
-      if (hash && ['home', 'know-aicaiml', 'courses', 'learners', 'events-projects', 'membership', 'login', 'verification', 'contact', 'privacy', 'terms', 'benefits-view'].includes(hash)) {
+       if (hash && ['home', 'know-aicaiml', 'courses', 'learners', 'events-projects', 'membership', 'login', 'member', 'verification', 'contact', 'privacy', 'terms', 'benefits-view'].includes(hash)) {
         setCurrentPage(hash);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
@@ -421,14 +422,20 @@ function AppShell() {
               </Suspense>
             )}
 
-            {currentPage === 'login' && (
-              <Suspense fallback={<RouteFallback />}>
-                <Login 
-                  setCurrentPage={setCurrentPage} 
-                  redirectAfterLogin={redirectAfterLogin}
-                />
-              </Suspense>
-            )}
+             {currentPage === 'login' && (
+               <Suspense fallback={<RouteFallback />}>
+                 <Login 
+                   setCurrentPage={setCurrentPage} 
+                   redirectAfterLogin={redirectAfterLogin}
+                 />
+               </Suspense>
+             )}
+
+             {currentPage === 'member' && (
+               <Suspense fallback={<RouteFallback />}>
+                 <MemberPortal setCurrentPage={setCurrentPage} />
+               </Suspense>
+             )}
 
              {currentPage === 'admin' && user?.role === 'admin' && (
                <Suspense fallback={<RouteFallback />}>

@@ -77,17 +77,43 @@ export default async function handler(req, res) {
     }
 
     const { data: existingUser } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
-    if (existingUser) {
+
+    // In development, auto-reset existing test accounts so the same email can be
+    // re-used to test the full membership workflow end-to-end.
+    if (process.env.NODE_ENV === 'development' && existingUser) {
+      const userRows = await supabase.from('users').select('id').eq('email', email);
+      if (userRows?.data?.length > 0) {
+        const userIds = userRows.data.map((u) => u.id);
+        await supabase.from('sessions').delete().in('user_id', userIds);
+        await supabase.from('certificates').delete().in('user_id', userIds);
+        await supabase.from('enrollments').delete().in('user_id', userIds);
+      }
+      await supabase.from('users').delete().eq('email', email);
+      await supabase.from('applications').delete().eq('email', email);
+      await supabase.from('enquiries').delete().eq('email', email);
+      await supabase.from('event_registrations').delete().eq('email', email);
+      await supabase.from('memberships').delete().eq('email', email);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[DEV AUTO-RESET] Existing account/email cleared for ${email}`);
+      }
+    }
+
+    if (existingUser && process.env.NODE_ENV !== 'development') {
       return res.status(409).json({ error: 'An account with this email address already exists. If you have forgotten your credentials, please contact support@aic-aiml.org.' });
     }
 
     const { data: existingApp } = await supabase.from('applications').select('*').eq('email', email).order('submitted_at', { ascending: false }).limit(1).maybeSingle();
     if (existingApp) {
-      return res.status(409).json({
-        error: `An application with this email address has already been submitted (Ref: ${existingApp.id}, Status: ${existingApp.status}). Each member is allowed only one application per email address.`,
-        existingApplicationId: existingApp.id,
-        existingStatus: existingApp.status
-      });
+      if (process.env.NODE_ENV === 'development') {
+        await supabase.from('applications').delete().eq('email', email);
+        console.log(`[DEV AUTO-RESET] Existing application cleared for ${email}`);
+      } else {
+        return res.status(409).json({
+          error: `An application with this email address has already been submitted (Ref: ${existingApp.id}, Status: ${existingApp.status}). Each member is allowed only one application per email address.`,
+          existingApplicationId: existingApp.id,
+          existingStatus: existingApp.status
+        });
+      }
     }
 
     const membershipNo = 'AIC-' + category.substring(0, 3).toUpperCase() + '-' + Math.floor(100000 + Math.random() * 900000);
@@ -96,6 +122,9 @@ export default async function handler(req, res) {
     const name = (parsedFormData && (parsedFormData.fullName || parsedFormData.studentName || parsedFormData.applicantName || parsedFormData.authorizedRepresentativeName || parsedFormData.institutionName || parsedFormData.universityName)) || 'Applicant';
     const phone = String(parsedFormData.phone || parsedFormData.mobile || parsedFormData.mobileNo || '').trim() || undefined;
     const verificationCode = String(Math.floor(100000 + Math.random() * 900000));
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[DEV OTP] Membership verification code for ${email} (App: ${applicationId}): ${verificationCode}`);
+    }
 
     const { error } = await supabase.from('applications').insert({
       id: applicationId,

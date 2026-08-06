@@ -101,27 +101,23 @@ async function handleApproveApplication(req, res, id) {
   const email = (formData.emailId || formData.email || 'applicant@aic-aiml.org').trim().toLowerCase();
 
   let memberId = null;
-  let generatedPassword = null;
 
-  const { data: existingUser } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
+  const existingUser = await supabase.from('users').select('*').eq('email', email).maybeSingle();
+
   if (!existingUser) {
     memberId = 'mem-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
-    generatedPassword = crypto.randomBytes(10).toString('base64url').substring(0, 16);
-    const { hash, salt } = (() => {
-      const salt = crypto.randomBytes(16).toString('hex');
-      const hash = crypto.scryptSync(generatedPassword, salt, 64).toString('hex');
-      return { hash, salt };
-    })();
     const { error: createError } = await supabase.from('users').insert({
       id: memberId,
       name,
       email,
-      password_hash: hash,
-      password_salt: salt,
+      email_verified: true,
+      password_hash: null,
+      password_salt: null,
       role: 'member',
       membership_plan: null,
+      membership_no: application.membership_no,
       membership_status: 'active',
-      permissions: [],
+      permissions: ['access_premium_courses', 'access_course_videos', 'access_downloadable_resources', 'access_quizzes', 'access_certificates', 'access_members_only_pages'],
       created_at: new Date().toISOString()
     });
     if (createError) {
@@ -146,15 +142,7 @@ async function handleApproveApplication(req, res, id) {
   }
 
   const baseUrl = process.env.BASE_URL || 'https://www.aic-aiml.org';
-  let emailBody = `Dear ${name},\n\nCongratulations! Your application for AICAIML ${application.category.toUpperCase()} membership has been reviewed and approved by the Membership Board.\n\nAPPROVAL DETAILS:\n - Membership ID: ${application.membership_no}\n - Application ID: ${application.id}\n - Membership Type: ${application.category.toUpperCase()}\n - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nNEXT STEPS:\n 1. Please use your Membership ID for all future correspondence with the Council.\n 2. Access to member-only courses, events, and chapter activities will be enabled upon first login.`;
-
-  if (memberId && generatedPassword) {
-    emailBody += `\n\nSECURE MEMBER PORTAL CREDENTIALS:\n - Member ID / Username: ${memberId}\n - Password: ${generatedPassword}\n\nYou can sign in at: ${baseUrl}/#login\n\nPlease keep these credentials secure and do not share them with anyone.\nYou may change your password after your first login.`;
-  } else if (existingUser) {
-    emailBody += `\n\n1. Your existing member portal account (linked to this email) is now active. You can sign in at: ${baseUrl}/#login`;
-  } else {
-    emailBody += `\n\n1. Your digital membership certificate and secure member portal login credentials will be issued shortly to this email address.`;
-  }
+  let emailBody = `Dear ${name},\n\nCongratulations! Your application for AICAIML ${application.category.toUpperCase()} membership has been reviewed and approved by the Membership Board.\n\nAPPROVAL DETAILS:\n - Membership ID: ${application.membership_no}\n - Application ID: ${application.id}\n - Membership Type: ${application.category.toUpperCase()}\n - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nNEXT STEPS:\n 1. Please use your Membership ID for all future correspondence with the Council.\n 2. You can now sign in to the member portal using your Google account.\n\nYou can sign in at: ${baseUrl}/#login\n\nWe will automatically link your Google account to your approved membership when you sign in for the first time. Access to member-only courses, events, and chapter activities will be enabled immediately.`;
 
   emailBody += `\n\nWelcome to India's premier AI/ML advancements ecosystem!\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
 
@@ -172,8 +160,7 @@ async function handleApproveApplication(req, res, id) {
 
   json(res, 200, {
     success: true,
-    application: { ...application, status: 'Approved', approval_date: approvalDate },
-    credentials: memberId && generatedPassword ? { memberId, password: generatedPassword } : null
+    application: { ...application, status: 'Approved', approval_date: approvalDate }
   });
 }
 
@@ -253,11 +240,11 @@ async function handleCreateUser(req, res) {
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
 
   const body = await parseJsonBody(req);
-  const { name, email, password, role } = body;
-  if (!name || !email || !password) return json(res, 400, { error: 'Name, email and password are required.' });
+  const { name, email, password, role, googleId } = body;
+  if (!name || !email) return json(res, 400, { error: 'Name and email are required.' });
   const emailLower = email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLower)) return json(res, 400, { error: 'Invalid email format.' });
-  if (password.length < 8) return json(res, 400, { error: 'Password must be at least 8 characters.' });
+  if (password && password.length < 8) return json(res, 400, { error: 'Password must be at least 8 characters.' });
 
   const { data: existing } = await supabase.from('users').select('*').eq('email', emailLower).maybeSingle();
   if (existing) return json(res, 409, { error: 'A user with this email already exists.' });
@@ -267,24 +254,31 @@ async function handleCreateUser(req, res) {
   const permissions = userRole === 'admin'
     ? ['access_premium_courses', 'access_course_videos', 'access_downloadable_resources', 'access_quizzes', 'access_certificates', 'access_members_only_pages']
     : [];
-  const { hash, salt } = (() => {
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = crypto.scryptSync(password, salt, 64).toString('hex');
-    return { hash, salt };
-  })();
 
-  const { data, error } = await supabase.from('users').insert({
+  const record = {
     id,
     name,
     email: emailLower,
-    password_hash: hash,
-    password_salt: salt,
+    password_hash: null,
+    password_salt: null,
+    google_id: googleId || null,
     role: userRole,
     membership_plan: null,
     membership_status: 'inactive',
     permissions,
     created_at: new Date().toISOString()
-  }).select('*').single();
+  };
+  if (password) {
+    const { hash, salt } = (() => {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+      return { hash, salt };
+    })();
+    record.password_hash = hash;
+    record.password_salt = salt;
+  }
+
+  const { data, error } = await supabase.from('users').insert(record).select('*').single();
 
   if (error) return json(res, 500, { error: error.message });
   json(res, 200, { success: true, user: toPublicUser(data) });

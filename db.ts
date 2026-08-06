@@ -7,6 +7,7 @@ const FALLBACK_AUTH_PASSWORD = (process.env.ADMIN_PASSWORD || 'vendhan123').trim
 const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
 const FALLBACK_AUTH_SECRET = process.env.AUTH_SESSION_SECRET || 'aicaiml-dev-session-secret';
 const FALLBACK_USER_ID = 'user-dev-001';
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim();
 
 function getFallbackUser(email?: string, password?: string, id?: string): PublicUser | null {
   const normalizedEmail = (email || '').trim().toLowerCase();
@@ -118,7 +119,21 @@ export async function insertApplication(app: {
     created_at: createdAt,
     updated_at: updatedAt
   });
-  if (error) throw error;
+  if (error) {
+    // Retry with only the essential columns for databases with an older schema
+    const { error: retryError } = await supabase.from('applications').insert({
+      id: app.id,
+      membership_no: app.membershipNo,
+      category: app.category,
+      name: app.name,
+      email: app.email,
+      form_data: app.formData,
+      submitted_at: app.submittedAt,
+      verification_code: app.verificationCode || null,
+      email_verified: app.emailVerified || 'false'
+    });
+    if (retryError) throw retryError;
+  }
 }
 
 export function getApplicationByEmail(email: string) {
@@ -480,6 +495,8 @@ export interface PublicUser {
   membershipPlan: string | null;
   membershipStatus: string;
   permissions: string[];
+  photoUrl?: string;
+  membershipNo?: string;
 }
 
 function toPublicUser(row: any): PublicUser {
@@ -490,7 +507,9 @@ function toPublicUser(row: any): PublicUser {
     role: row.role,
     membershipPlan: row.membership_plan,
     membershipStatus: row.membership_status,
-    permissions: Array.isArray(row.permissions) ? row.permissions : JSON.parse(row.permissions || '[]')
+    permissions: Array.isArray(row.permissions) ? row.permissions : JSON.parse(row.permissions || '[]'),
+    photoUrl: row.photo_url || undefined,
+    membershipNo: row.membership_no || undefined
   };
 }
 
@@ -498,25 +517,36 @@ export async function createUser(user: {
   id: string;
   name: string;
   email: string;
-  password: string;
+  password?: string;
+  googleId?: string;
   role: string;
   membershipPlan?: string | null;
   membershipStatus: string;
   permissions: string[];
   membershipNo?: string;
+  photoUrl?: string;
 }): Promise<PublicUser> {
-  const { hash, salt } = hashPassword(user.password);
+  let passwordHash: string | null = null;
+  let passwordSalt: string | null = null;
+  if (user.password) {
+    const { hash, salt } = hashPassword(user.password);
+    passwordHash = hash;
+    passwordSalt = salt;
+  }
   const baseRecord: Record<string, any> = {
     id: user.id,
     name: user.name,
     email: user.email.toLowerCase().trim(),
-    password_hash: hash,
-    password_salt: salt,
+    password_hash: passwordHash,
+    password_salt: passwordSalt,
+    google_id: user.googleId || null,
     role: user.role,
     membership_plan: user.membershipPlan || null,
     membership_status: user.membershipStatus,
     permissions: user.permissions,
-    created_at: new Date().toISOString()
+    photo_url: user.photoUrl || null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   };
 
   if (user.membershipNo) {
@@ -558,6 +588,126 @@ export async function verifyCredentials(email: string, password: string): Promis
     return getFallbackUser(email, password) || null;
   }
   return toPublicUser(data);
+}
+
+export interface GoogleUserInfo {
+  email: string;
+  name: string;
+  picture: string;
+  googleId: string;
+}
+
+export async function verifyGoogleToken(idToken: string): Promise<GoogleUserInfo | null> {
+  if (!GOOGLE_CLIENT_ID) {
+    console.warn('GOOGLE_CLIENT_ID is not set — Google login is disabled.');
+    return null;
+  }
+  try {
+    const { OAuth2Client } = require('google-auth-library');
+    const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email || !payload.email_verified) return null;
+    return {
+      email: payload.email,
+      name: payload.name || '',
+      picture: payload.picture || '',
+      googleId: payload.sub
+    };
+  } catch (err: any) {
+    console.error('Google token verification failed:', err.message);
+    return null;
+  }
+}
+
+export async function getOrCreateGoogleUser(info: GoogleUserInfo): Promise<PublicUser | null> {
+  if (!SUPABASE_ENABLED) return null;
+
+  const normalizedEmail = info.email.toLowerCase().trim();
+
+  // 1. Check for existing user by google_id (fastest path).
+  const { data: byGoogleId, error: errById } = await supabase
+    .from('users')
+    .select('*')
+    .eq('google_id', info.googleId)
+    .maybeSingle();
+  if (byGoogleId) return toPublicUser(byGoogleId);
+
+  // 2. Check for existing user by email.
+  const { data: byEmail, error: errByEmail } = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', normalizedEmail)
+    .maybeSingle();
+
+  if (byEmail) {
+    // Link the Google ID to the existing account (if not already linked).
+    if (!byEmail.google_id) {
+      await supabase
+        .from('users')
+        .update({ google_id: info.googleId, photo_url: byEmail.photo_url || info.picture })
+        .eq('email', normalizedEmail);
+    }
+    return toPublicUser(byEmail);
+  }
+
+  // 3. Check for an approved membership application with this email.
+  const { data: approvedApp, error: appErr } = await supabase
+    .from('applications')
+    .select('*')
+    .eq('email', normalizedEmail)
+    .eq('status', 'Approved')
+    .order('submitted_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!approvedApp) return null;
+
+  // 4. Create a new member user linked to Google.
+  const userId = 'mem-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
+  const formData = approvedApp.form_data || {};
+  const memberName =
+    formData.studentName ||
+    formData.applicantName ||
+    formData.authorizedRepresentativeName ||
+    formData.institutionName ||
+    formData.universityName ||
+    info.name;
+
+  const result = await supabase.from('users').insert({
+    id: userId,
+    name: memberName,
+    email: normalizedEmail,
+    email_verified: true,
+    password_hash: null,
+    password_salt: null,
+    google_id: info.googleId,
+    role: 'member',
+    membership_plan: approvedApp.category || null,
+    membership_no: approvedApp.membership_no || null,
+    membership_status: 'active',
+    permissions: [
+      'access_premium_courses',
+      'access_course_videos',
+      'access_downloadable_resources',
+      'access_quizzes',
+      'access_certificates',
+      'access_members_only_pages'
+    ],
+    photo_url: info.picture,
+    must_reset_password: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }).select('*').single();
+
+  if (result.error) {
+    console.error('Failed to create Google member user:', result.error);
+    return null;
+  }
+  return toPublicUser(result.data);
 }
 
 export async function updateUserPassword(email: string, currentPassword: string, newPassword: string): Promise<boolean> {
@@ -684,4 +834,56 @@ export function getAllUsers() {
 
 export function getNewsByCursor() {
   return supabase.from('news').select('*').order('created_at', { ascending: false });
+}
+
+// --- Development Test Reset ---
+// Removes all records for a given email across applications, users, sessions,
+// enquiries, event registrations, and memberships so the same email can be used
+// to re-test the full membership workflow during development.
+export async function resetTestAccount(email: string): Promise<{ success: boolean; error?: string; deletedUser?: boolean; deletedApplication?: boolean }> {
+  if (!SUPABASE_ENABLED) {
+    return { success: false, error: 'Supabase is not configured.' };
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+  let deletedUser = false;
+  let deletedApplication = false;
+
+  try {
+    // 1. Delete sessions for users with this email (cascade would handle it,
+    //    but we delete explicitly for clarity).
+    const { data: userRows } = await supabase.from('users').select('id').eq('email', normalizedEmail);
+    if (userRows && userRows.length > 0) {
+      const userIds = userRows.map((u: any) => u.id);
+      await supabase.from('sessions').delete().in('user_id', userIds);
+      // 2. Delete certificates referencing this user
+      await supabase.from('certificates').delete().in('user_id', userIds);
+      // 3. Delete enrollments
+      await supabase.from('enrollments').delete().in('user_id', userIds);
+    }
+
+    // 4. Delete the user record itself
+    const { error: userError } = await supabase.from('users').delete().eq('email', normalizedEmail);
+    if (userError && userError.code !== 'PGRST116') throw userError;
+    deletedUser = true;
+
+    // 5. Delete membership applications
+    const { error: appError } = await supabase.from('applications').delete().eq('email', normalizedEmail);
+    if (appError && appError.code !== 'PGRST116') throw appError;
+    deletedApplication = true;
+
+    // 6. Delete enquiries
+    await supabase.from('enquiries').delete().eq('email', normalizedEmail);
+
+    // 7. Delete event registrations
+    await supabase.from('event_registrations').delete().eq('email', normalizedEmail);
+
+    // 8. Delete membership payments
+    await supabase.from('memberships').delete().eq('email', normalizedEmail);
+
+    return { success: true, deletedUser, deletedApplication };
+  } catch (err: any) {
+    console.error('resetTestAccount error:', err);
+    return { success: false, error: err.message || 'Failed to reset test account.' };
+  }
 }
