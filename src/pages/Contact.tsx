@@ -69,6 +69,9 @@ export default function Contact() {
       await submitVerifiedForm();
       return;
     }
+    if (verificationStep === 'requesting' || verificationStep === 'verifying') {
+      return;
+    }
     const sent = await requestCode();
     if (!sent) {
       setError('Failed to send verification code. Please try again.');

@@ -2,13 +2,17 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
+import net from 'node:net';
 import multer from 'multer';
 import nodemailer from 'nodemailer';
 import { createServer as createViteServer } from 'vite';
+import type { Server as HttpServer } from 'node:http';
+import type { ViteDevServer } from 'vite';
 import {
   insertEnquiry, insertApplication, insertEventRegistration, getNews, insertNewsArticle, insertMembershipPayment,
   verifyCredentials, createSession, getSessionUser, deleteSession, updateUserPassword, seedDevUser,
-  verifyGoogleToken, getOrCreateGoogleUser,
+  verifyPassword, hashPassword,
   getCourses, insertCourse, deleteCourse,
   getAllEnquiries, getAllApplications, getApplicationById, getAllEventRegistrations, getAllMemberships, getAllUsers, getUserByEmail,
   getMembershipByNo, insertCertificate, getCertificateByCode,
@@ -16,16 +20,27 @@ import {
   getEvents, insertEvent, deleteEvent,
   getPartners, insertPartner, deletePartner,
   getTestimonials, insertTestimonial, deleteTestimonial,
-  updateApplicationStatus, createUser, verifyApplicationEmail, getApplicationByEmail,
-  PublicUser, resetTestAccount
-} from './db';
-import { SUPABASE_ENABLED } from './lib/supabase';
+   updateApplicationStatus, createUser, verifyApplicationEmail, getApplicationByEmail,
+   PublicUser, resetTestAccount
+ } from './db';
+import { isSupabaseConfigured, supabase } from './lib/supabase';
 
 const SESSION_COOKIE = 'aicaiml_session';
 const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
-const entryFile = process.argv[1] ? path.resolve(process.argv[1]) : path.resolve('.');
-const __filename = entryFile;
-const __dirname = path.dirname(entryFile);
+const __filename = process.argv[1] ? path.resolve(process.argv[1]) : path.resolve('.');
+const __dirname = path.dirname(__filename);
+
+declare global {
+  var __aicaimlDevServerInstance: Promise<{ app: express.Express; server: HttpServer; port: number; vite?: ViteDevServer }> | undefined;
+}
+
+function resolveDevHost() {
+  const configuredHost = (process.env.HOST || '127.0.0.1').trim().toLowerCase();
+  if (!configuredHost || configuredHost === '0.0.0.0' || configuredHost === '::' || configuredHost === 'localhost') {
+    return '127.0.0.1';
+  }
+  return configuredHost;
+}
 
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -50,8 +65,177 @@ function clearSessionCookie(res: express.Response) {
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`);
 }
 
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
+}
+
+function toPublicUserFromRow(row: any): PublicUser {
+  let permissions: string[] = [];
+  if (Array.isArray(row.permissions)) {
+    permissions = row.permissions;
+  } else if (typeof row.permissions === 'string') {
+    try {
+      permissions = JSON.parse(row.permissions);
+    } catch {
+      permissions = [];
+    }
+  }
+
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    membershipPlan: row.membership_plan || null,
+    membershipNo: row.membership_no || null,
+    membershipStatus: row.membership_status || 'inactive',
+    mustResetPassword: Boolean(row.must_reset_password),
+    permissions
+  };
+}
+
+function parseMembershipSequence(memberId: string | null | undefined, year: number) {
+  const match = String(memberId || '').match(/^AICAIML-(\d{4})-(\d{4})$/);
+  if (!match) return 0;
+  if (match[1] !== String(year)) return 0;
+  return Number(match[2]) || 0;
+}
+
+const INVALID_PASSWORD_MESSAGE = 'This password cannot be used. Please choose a different password and try again.';
+
+function validateMemberPassword(password: string) {
+  if (!password || password.length < 8 || password.length > 72) return false;
+  if (/\s/.test(password)) return false;
+  if (!/[a-z]/.test(password)) return false;
+  if (!/[A-Z]/.test(password)) return false;
+  if (!/\d/.test(password)) return false;
+  if (!/[^A-Za-z0-9]/.test(password)) return false;
+  return true;
+}
+
+async function upsertSupabaseAuthPassword(userRow: any, password: string) {
+  const create = await supabase.auth.admin.createUser({
+    email: userRow.email,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      local_user_id: userRow.id,
+      membership_no: userRow.membership_no || null,
+      role: 'member'
+    },
+    app_metadata: {
+      role: 'member'
+    }
+  });
+
+  if (!create.error) return;
+
+  const lower = String(create.error.message || '').toLowerCase();
+  const mayExist = lower.includes('already') || lower.includes('exists') || lower.includes('registered');
+  if (!mayExist) {
+    throw create.error;
+  }
+
+  let page = 1;
+  let foundUser: any = null;
+
+  while (page <= 20 && !foundUser) {
+    const listed = await supabase.auth.admin.listUsers({ page, perPage: 200 });
+    if (listed.error) throw listed.error;
+
+    const users = listed.data?.users || [];
+    foundUser = users.find((u: any) => String(u.email || '').toLowerCase() === String(userRow.email || '').toLowerCase()) || null;
+    if (users.length < 200) break;
+    page += 1;
+  }
+
+  if (!foundUser) {
+    throw new Error('Unable to locate existing Supabase Auth user for this email.');
+  }
+
+  const update = await supabase.auth.admin.updateUserById(foundUser.id, {
+    password,
+    email_confirm: true,
+    user_metadata: {
+      ...(foundUser.user_metadata || {}),
+      local_user_id: userRow.id,
+      membership_no: userRow.membership_no || null,
+      role: 'member'
+    }
+  });
+
+  if (update.error) throw update.error;
+}
+
+async function generateMembershipId() {
+  const year = new Date().getFullYear();
+  const pattern = `AICAIML-${year}-%`;
+
+  const usersRes = await supabase.from('users').select('membership_no').like('membership_no', pattern);
+  let appsRes = await supabase.from('applications').select('member_id').like('member_id', pattern);
+
+  if (appsRes.error && String(appsRes.error.message || '').toLowerCase().includes('member_id')) {
+    appsRes = { data: [], error: null } as any;
+  }
+
+  if (usersRes.error) throw usersRes.error;
+  if (appsRes.error) throw appsRes.error;
+
+  let maxSeq = 0;
+  for (const row of usersRes.data || []) {
+    maxSeq = Math.max(maxSeq, parseMembershipSequence(row.membership_no, year));
+  }
+  for (const row of appsRes.data || []) {
+    maxSeq = Math.max(maxSeq, parseMembershipSequence(row.member_id, year));
+  }
+
+  return `AICAIML-${year}-${String(maxSeq + 1).padStart(4, '0')}`;
+}
+
+function createRateLimitMiddleware(windowMs = 60_000, maxRequests = 20) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const key = req.ip || 'unknown';
+    const now = Date.now();
+    const entry = rateLimitStore.get(key);
+
+    if (!entry || entry.resetAt <= now) {
+      rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+
+    if (entry.count >= maxRequests) {
+      return res.status(429).json({ error: 'Too many requests. Please try again shortly.' });
+    }
+
+    entry.count += 1;
+    next();
+  };
+}
+
+function validateRequestBody(schema: Record<string, { required?: boolean; type?: 'string' | 'number' | 'boolean'; minLength?: number }>) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const body = req.body ?? {};
+    for (const [field, rules] of Object.entries(schema)) {
+      const value = body[field];
+      if (rules.required && (value === undefined || value === null || value === '')) {
+        return res.status(400).json({ error: `${field} is required.` });
+      }
+      if (value !== undefined && value !== null) {
+        if (rules.type && typeof value !== rules.type) {
+          return res.status(400).json({ error: `${field} must be of type ${rules.type}.` });
+        }
+        if (rules.minLength && typeof value === 'string' && value.trim().length < rules.minLength) {
+          return res.status(400).json({ error: `${field} must be at least ${rules.minLength} characters.` });
+        }
+      }
+    }
+    next();
+  };
+}
+
 const verificationStore = new Map<string, { code: string; expiresAt: Date }>();
 const verifiedEmails = new Set<string>();
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 
 // Real email delivery for the Contact page, via Gmail SMTP + an app password.
 // Credentials live in .env (gitignored) — see that file for setup instructions.
@@ -186,41 +370,53 @@ const documentUpload = multer({
   }
 });
 
-async function findAvailablePort(startPort: number): Promise<number> {
-  const net = await import('net');
-  return new Promise((resolve) => {
+function getPreferredPort(preferredPort: number, host = '127.0.0.1'): Promise<number> {
+  return new Promise((resolve, reject) => {
     const server = net.createServer();
-    server.listen(startPort, '0.0.0.0', () => {
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : startPort;
-      server.close(() => resolve(port));
+    server.once('error', (err: NodeJS.ErrnoException) => {
+      reject(err);
     });
-    server.on('error', () => {
-      server.close();
-      resolve(findAvailablePort(startPort + 1));
+    server.once('listening', () => {
+      const assignedPort = (server.address() as net.AddressInfo).port;
+      server.close(() => resolve(assignedPort));
     });
+    server.listen(preferredPort, host);
   });
 }
 
-async function startServer() {
-  const app = express();
-  const desiredPort = parseInt(process.env.PORT || '3000', 10);
-  const PORT = await findAvailablePort(desiredPort);
-
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-    if (PORT !== desiredPort) {
-      console.warn(`Port ${desiredPort} was in use, fell back to ${PORT}`);
-    }
+async function shutdownServer() {
+  if (!globalThis.__aicaimlDevServerInstance) return;
+  const instance = await globalThis.__aicaimlDevServerInstance;
+  await new Promise<void>((resolve) => {
+    instance.server.close(() => resolve());
   });
+  if (instance.vite) {
+    await instance.vite.close();
+  }
+  globalThis.__aicaimlDevServerInstance = undefined;
+}
 
-  server.on('error', (err: any) => {
-    console.error('Server error:', err);
-    process.exit(1);
-  });
+export async function startServer() {
+  if (globalThis.__aicaimlDevServerInstance) {
+    return globalThis.__aicaimlDevServerInstance;
+  }
+
+  const startPromise = (async () => {
+    const app = express();
+    const parsedPort = Number(process.env.PORT);
+    const preferredPort = Number.isFinite(parsedPort) && parsedPort >= 0 ? parsedPort : 3000;
+    const host = resolveDevHost();
+    const PORT = await getPreferredPort(preferredPort, host);
+    const hmrPort = Number(process.env.HMR_PORT || 3001);
+    const hmrEnabled = process.env.DISABLE_HMR !== 'true';
+
+    app.disable('x-powered-by');
+
+  const publicRateLimit = createRateLimitMiddleware();
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+  app.use('/api', publicRateLimit);
 
   app.use((req, res, next) => {
     if (req.body === undefined) req.body = {};
@@ -232,10 +428,29 @@ async function startServer() {
   app.use(express.static(publicDir));
   app.use('/uploads', express.static(uploadsDir));
 
-  // API Route - Health Check
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', serverTime: new Date().toISOString() });
-  });
+   // API Route - Health Check
+   app.get('/api/health', (req, res) => {
+     res.json({ status: 'ok', serverTime: new Date().toISOString() });
+   });
+
+   // Dev-only: Reset a test account (clears all Supabase + in-memory records for an email)
+   app.post('/api/dev/reset-account', async (req, res) => {
+     if (process.env.NODE_ENV !== 'development') {
+       return res.status(404).json({ error: 'Not found.' });
+     }
+     const { email } = req.body;
+     if (!email) {
+       return res.status(400).json({ error: 'Email is required.' });
+     }
+     const cleanEmail = String(email).trim().toLowerCase();
+     verificationStore.delete(cleanEmail);
+     verifiedEmails.delete(cleanEmail);
+     const result = await resetTestAccount(cleanEmail);
+     if (process.env.NODE_ENV === 'development') {
+       console.log(`[DEV RESET] Cleared test account for ${cleanEmail}: user=${result.deletedUser}, app=${result.deletedApplication}`);
+     }
+     res.json({ success: result.success, ...result });
+   });
 
   // API Route - Request email verification code (pre-submission step)
   app.post('/api/verification/request', async (req, res) => {
@@ -245,19 +460,15 @@ async function startServer() {
         return res.status(400).json({ error: 'Email is required.' });
       }
       const cleanEmail = String(email).trim().toLowerCase();
-       const code = String(Math.floor(100000 + Math.random() * 900000));
+      const code = String(Math.floor(100000 + Math.random() * 900000));
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-      verificationStore.set(cleanEmail, { code, expiresAt });
+       verificationStore.set(cleanEmail, { code, expiresAt });
       if (process.env.NODE_ENV === 'development') {
         console.log(`[DEV OTP] Verification code for ${cleanEmail}: ${code}`);
       }
       const emailBody = `Your AICAIML verification code is: ${code}\n\nThis code expires in 10 minutes.`;
-       const { sent } = await sendEnquiryEmail(cleanEmail, 'AICAIML Email Verification', emailBody);
-      const response: any = { success: true, sent, message: 'Verification code sent.' };
-      if (process.env.NODE_ENV === 'development') {
-        response.devCode = code;
-      }
-      res.json(response);
+      const { sent } = await sendEnquiryEmail(cleanEmail, 'AICAIML Email Verification', emailBody);
+      res.json({ success: true, sent, message: 'Verification code sent.' });
     } catch (err: any) {
       console.error('Verification request error:', err);
       res.status(500).json({ error: err.message || 'Failed to send verification code.' });
@@ -299,10 +510,15 @@ async function startServer() {
   });
 
   // API Route - Login (email + password, session cookie)
-  app.post('/api/auth/login', async (req, res) => {
+  const loginValidation = validateRequestBody({
+    email: { required: true, type: 'string', minLength: 3 },
+    password: { required: true, type: 'string', minLength: 8 }
+  });
+
+  app.post('/api/auth/login', loginValidation, async (req, res) => {
     const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required.' });
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address.' });
     }
 
     const user = await verifyCredentials(email, password);
@@ -312,35 +528,188 @@ async function startServer() {
 
     const { token, expiresAt } = await createSession(user.id);
     setSessionCookie(res, token, expiresAt);
-     res.json({ success: true, user });
-   });
+    res.json({ success: true, user });
+  });
 
-   // API Route - Google login (members use Google SSO; no password required)
-   app.post('/api/auth/google', async (req, res) => {
-     const { idToken } = req.body;
-     if (!idToken) {
-       return res.status(400).json({ error: 'Google ID token is required.' });
-     }
+  app.post('/api/auth/member/login', async (req, res) => {
+    try {
+      const identifier = String(req.body?.identifier || req.body?.email || req.body?.memberId || '').trim();
+      const password = String(req.body?.password || '');
+      if (!identifier || !password) {
+        return res.status(400).json({ error: 'Identifier and password are required.' });
+      }
 
-     const googleUser = await verifyGoogleToken(idToken);
-     if (!googleUser) {
-       return res.status(401).json({ error: 'Google sign-in failed. Please try again.' });
-     }
+      const isEmailIdentifier = identifier.includes('@');
+      const userQuery = isEmailIdentifier
+        ? await supabase.from('users').select('*').eq('email', identifier.toLowerCase()).maybeSingle()
+        : await supabase.from('users').select('*').eq('membership_no', identifier.toUpperCase()).maybeSingle();
 
-     const user = await getOrCreateGoogleUser(googleUser);
-     if (!user) {
-       return res.status(403).json({
-         error: 'No approved AICAIML membership found for this Google account. Please submit a membership application and wait for approval.'
-       });
-     }
+      if (userQuery.error) {
+        return res.status(500).json({ error: userQuery.error.message });
+      }
 
-     const { token, expiresAt } = await createSession(user.id);
-     setSessionCookie(res, token, expiresAt);
-     res.json({ success: true, user });
-   });
+      const userRow = userQuery.data;
+      if (!userRow) {
+        if (isEmailIdentifier) {
+          const appStatusQuery = await supabase
+            .from('applications')
+            .select('status')
+            .eq('email', identifier.toLowerCase())
+            .order('submitted_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-   // API Route - Logout
-   app.post('/api/auth/logout', async (req, res) => {
+          if (!appStatusQuery.error && appStatusQuery.data) {
+            const status = String(appStatusQuery.data.status || '').toLowerCase();
+            if (status === 'pending') {
+              return res.status(403).json({ error: 'Your application is still pending review. You can sign in after approval.', status });
+            }
+            if (status === 'rejected') {
+              return res.status(403).json({ error: 'Your previous application was rejected. Please submit a new application to continue.', status });
+            }
+          }
+        }
+
+        return res.status(401).json({ error: 'Invalid member credentials.' });
+      }
+
+      if (String(userRow.role || '').toLowerCase() !== 'member') {
+        return res.status(403).json({ error: 'This account is not a member account.' });
+      }
+
+      const memberStatus = String(userRow.membership_status || '').toLowerCase();
+      if (memberStatus && memberStatus !== 'active') {
+        return res.status(403).json({ error: 'Your membership is not active yet.', status: memberStatus });
+      }
+
+      if (!verifyPassword(password, userRow.password_hash, userRow.password_salt)) {
+        return res.status(401).json({ error: 'Invalid member credentials.' });
+      }
+
+      if (userRow.must_reset_password) {
+        return res.status(403).json({
+          error: 'Password setup is required before first sign-in. Please use the link sent to your email.',
+          code: 'PASSWORD_SETUP_REQUIRED'
+        });
+      }
+
+      const { token, expiresAt } = await createSession(userRow.id);
+      setSessionCookie(res, token, expiresAt);
+      return res.json({ success: true, user: toPublicUserFromRow(userRow) });
+    } catch (err: any) {
+      console.error('Member login error:', err);
+      return res.status(500).json({ error: err.message || 'Unable to process member login.' });
+    }
+  });
+
+  app.post('/api/auth/member/set-password', async (req, res) => {
+    try {
+      const token = String(req.body?.token || '').trim();
+      const newPassword = String(req.body?.newPassword || '');
+      if (!token || !newPassword) {
+        return res.status(400).json({ error: 'Token and new password are required.' });
+      }
+      if (!validateMemberPassword(newPassword)) {
+        return res.status(400).json({ error: INVALID_PASSWORD_MESSAGE });
+      }
+
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const userQuery = await supabase.from('users').select('*').eq('password_reset_token', tokenHash).maybeSingle();
+      if (userQuery.error) {
+        return res.status(500).json({ error: userQuery.error.message });
+      }
+
+      const userRow = userQuery.data;
+      if (!userRow) {
+        return res.status(400).json({ error: 'This password setup link is invalid.' });
+      }
+
+      const expiresAt = userRow.password_reset_expires_at ? new Date(userRow.password_reset_expires_at) : null;
+      if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt < new Date()) {
+        return res.status(400).json({ error: 'This password setup link has expired. Ask admin to resend approval setup.' });
+      }
+
+      if (String(userRow.role || '').toLowerCase() !== 'member' || String(userRow.membership_status || '').toLowerCase() !== 'active') {
+        return res.status(403).json({ error: 'Only approved members can set their account password.' });
+      }
+
+      try {
+        await upsertSupabaseAuthPassword(userRow, newPassword);
+      } catch (authError) {
+        console.error('Supabase Auth password setup failed:', authError);
+        return res.status(400).json({ error: INVALID_PASSWORD_MESSAGE });
+      }
+
+      const { hash, salt } = hashPassword(newPassword);
+      const updateRes = await supabase.from('users').update({
+        password_hash: hash,
+        password_salt: salt,
+        password_reset_token: null,
+        password_reset_expires_at: null,
+        must_reset_password: false,
+        email_verified: true,
+        updated_at: new Date().toISOString()
+      }).eq('id', userRow.id);
+
+      if (updateRes.error) {
+        return res.status(500).json({ error: updateRes.error.message });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Password saved successfully. Please sign in on the Member Login page.'
+      });
+    } catch (err: any) {
+      console.error('Member set-password error:', err);
+      return res.status(500).json({ error: err.message || 'Unable to set password.' });
+    }
+  });
+
+  app.get('/api/auth/member/dashboard', async (req, res) => {
+    try {
+      const cookies = parseCookies(req.headers.cookie);
+      const token = cookies[SESSION_COOKIE];
+      const sessionUser = token ? await getSessionUser(token) : null;
+
+      if (!sessionUser) {
+        return res.status(401).json({ error: 'Not authenticated.' });
+      }
+      if (sessionUser.role !== 'member') {
+        return res.status(403).json({ error: 'Member access required.' });
+      }
+
+      const [appQuery, membershipQuery] = await Promise.all([
+        supabase.from('applications').select('*').eq('email', sessionUser.email).order('submitted_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('memberships').select('*').eq('email', sessionUser.email).order('paid_at', { ascending: false }).limit(1).maybeSingle()
+      ]);
+
+      if (appQuery.error) return res.status(500).json({ error: appQuery.error.message });
+      if (membershipQuery.error) return res.status(500).json({ error: membershipQuery.error.message });
+
+      const latestApplication = appQuery.data || null;
+      const latestMembership = membershipQuery.data || null;
+
+      return res.json({
+        profile: {
+          id: sessionUser.id,
+          name: sessionUser.name,
+          email: sessionUser.email,
+          membershipNo: sessionUser.membershipNo || latestApplication?.member_id || null,
+          membershipStatus: sessionUser.membershipStatus,
+          membershipPlan: sessionUser.membershipPlan || latestMembership?.plan_name || null,
+          joinedDate: latestApplication?.approval_date || latestMembership?.paid_at || null,
+          phone: latestApplication?.phone || latestMembership?.phone || null,
+          category: latestApplication?.category || latestMembership?.category || null
+        }
+      });
+    } catch (err: any) {
+      console.error('Member dashboard error:', err);
+      return res.status(500).json({ error: err.message || 'Unable to load member dashboard.' });
+    }
+  });
+
+  // API Route - Logout
+  app.post('/api/auth/logout', async (req, res) => {
     const cookies = parseCookies(req.headers.cookie);
     const token = cookies[SESSION_COOKIE];
     if (token) await deleteSession(token);
@@ -378,39 +747,10 @@ async function startServer() {
       return res.status(401).json({ error: 'Current password is incorrect.' });
     }
 
-   res.json({ success: true, message: 'Password updated successfully.' });
-   });
+    res.json({ success: true, message: 'Password updated successfully.' });
+  });
 
-   // API Route - Member portal data (requires an active session)
-   app.get('/api/member/data', async (req, res) => {
-     const user = await getSessionUserFromRequest(req);
-     if (!user) {
-       return res.status(401).json({ error: 'Not authenticated.' });
-     }
-     res.json({ user });
-   });
-
-   // Dev-only: Reset a test account (clears all Supabase + in-memory records for an email)
-   app.post('/api/dev/reset-account', async (req, res) => {
-     if (process.env.NODE_ENV !== 'development') {
-       return res.status(404).json({ error: 'Not found.' });
-     }
-     const { email } = req.body;
-     if (!email) {
-       return res.status(400).json({ error: 'Email is required.' });
-     }
-     const cleanEmail = String(email).trim().toLowerCase();
-     verificationStore.delete(cleanEmail);
-     verifiedEmails.delete(cleanEmail);
-     const result = await resetTestAccount(cleanEmail);
-     if (process.env.NODE_ENV === 'development') {
-       console.log(`[DEV RESET] Cleared test account for ${cleanEmail}: user=${result.deletedUser}, app=${result.deletedApplication}`);
-     }
-     res.json({ success: result.success, ...result });
-   });
-
-   // --- Admin-only routes ---
-
+  // --- Admin-only routes ---
 
   app.get('/api/admin/overview', requireAdmin, async (req, res) => {
     const enquiries = (await getAllEnquiries()).data?.length || 0;
@@ -462,35 +802,96 @@ async function startServer() {
       const name = formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName || 'Applicant';
       const email = (formData.emailId || formData.email || 'applicant@aic-aiml.org').trim().toLowerCase();
 
-      const existingUser = await getUserByEmail(email);
-      let memberId: string | null = null;
+      const memberId = application.member_id && /^AICAIML-\d{4}-\d{4}$/.test(application.member_id)
+        ? application.member_id
+        : await generateMembershipId();
 
-      // When a user already exists, link them to this membership. New users are
-      // created lazily on first Google sign-in (no password is ever stored).
-      if (existingUser) {
-        memberId = existingUser.id;
+      const existingUserQuery = await supabase.from('users').select('*').eq('email', email).maybeSingle();
+      if (existingUserQuery.error) {
+        return res.status(500).json({ error: existingUserQuery.error.message });
+      }
+
+      let userRow = existingUserQuery.data;
+      if (!userRow) {
+        const tempPassword = crypto.randomBytes(24).toString('base64url');
+        const created = await createUser({
+          id: 'mem-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+          name,
+          email,
+          password: tempPassword,
+          role: 'member',
+          membershipPlan: null,
+          membershipStatus: 'active',
+          permissions: [],
+          membershipNo: memberId
+        });
+        const createdQuery = await supabase.from('users').select('*').eq('id', created.id).single();
+        if (createdQuery.error || !createdQuery.data) {
+          return res.status(500).json({ error: createdQuery.error?.message || 'Failed to load created member user.' });
+        }
+        userRow = createdQuery.data;
+      } else {
+        let resetSeed: { hash: string; salt: string } | null = null;
+        if (!userRow.password_hash || !userRow.password_salt) {
+          const tempPassword = crypto.randomBytes(24).toString('base64url');
+          resetSeed = hashPassword(tempPassword);
+        }
+
+        const syncUserRes = await supabase.from('users').update({
+          role: 'member',
+          membership_no: userRow.membership_no || memberId,
+          membership_status: 'active',
+          name: userRow.name || name,
+          password_hash: resetSeed ? resetSeed.hash : userRow.password_hash,
+          password_salt: resetSeed ? resetSeed.salt : userRow.password_salt,
+          must_reset_password: true,
+          updated_at: new Date().toISOString()
+        }).eq('id', userRow.id).select('*').single();
+        if (!syncUserRes.error && syncUserRes.data) {
+          userRow = syncUserRes.data;
+        }
+      }
+
+      const rawSetupToken = crypto.randomBytes(32).toString('base64url');
+      const tokenHash = crypto.createHash('sha256').update(rawSetupToken).digest('hex');
+      const setupExpiry = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+      const setupTokenRes = await supabase.from('users').update({
+        password_reset_token: tokenHash,
+        password_reset_expires_at: setupExpiry,
+        must_reset_password: true,
+        membership_no: userRow.membership_no || memberId,
+        membership_status: 'active',
+        updated_at: new Date().toISOString()
+      }).eq('id', userRow.id);
+
+      if (setupTokenRes.error) {
+        return res.status(500).json({ error: setupTokenRes.error.message });
       }
 
       const updated = await updateApplicationStatus(application.id, 'Approved', approvalDate, memberId);
 
       const subject = `[AICAIML] Membership Application Approved - ${application.membership_no}`;
+      const baseUrl = process.env.BASE_URL || 'https://www.aic-aiml.org';
+      const setPasswordLink = `${baseUrl}/#set-password?token=${encodeURIComponent(rawSetupToken)}`;
+
       let emailBody = `Dear ${name},
 
 Congratulations! Your application for AICAIML ${application.category.toUpperCase()} membership has been reviewed and approved by the Membership Board.
 
 APPROVAL DETAILS:
-- Membership ID: ${application.membership_no}
+    - Membership ID: ${memberId}
 - Application ID: ${application.id}
 - Membership Type: ${application.category.toUpperCase()}
 - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}
 
-NEXT STEPS:
-1. Please use your Membership ID for all future correspondence with the Council.
-2. You can now sign in to the member portal using your Google account.
+    SECURE ACCOUNT SETUP:
+    1. Set your member portal password using the secure link below:
+    ${setPasswordLink}
+    2. This link expires in 48 hours for your account security.
+    3. After setting your password, sign in at: ${baseUrl}/#member-login
 
-You can sign in at: ${process.env.BASE_URL || 'https://www.aic-aiml.org'}/#login
-
-We will automatically link your Google account to your approved membership when you sign in for the first time. Access to member-only courses, events, and chapter activities will be enabled immediately.`;
+    Please keep your credentials secure and do not share them with anyone.`;
 
       emailBody += `
 
@@ -504,7 +905,8 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
 
       res.json({
         success: true,
-        application: updated
+        application: updated,
+        credentials: { memberId, setupLinkSent: true }
       });
     } catch (err: any) {
       console.error('Approve application error:', err);
@@ -581,17 +983,17 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
 
   app.post('/api/admin/users', requireAdmin, async (req, res) => {
     try {
-       const { name, email, password, role, googleId } = req.body;
-       if (!name || !email) {
-         return res.status(400).json({ error: 'Name and email are required.' });
-       }
-       const emailLower = email.trim().toLowerCase();
-       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLower)) {
-         return res.status(400).json({ error: 'Invalid email format.' });
-       }
-       if (password && password.length < 8) {
-         return res.status(400).json({ error: 'Password must be at least 8 characters.' });
-       }
+      const { name, email, password, role } = req.body;
+      if (!name || !email || !password) {
+        return res.status(400).json({ error: 'Name, email and password are required.' });
+      }
+      const emailLower = email.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLower)) {
+        return res.status(400).json({ error: 'Invalid email format.' });
+      }
+      if (password.length < 8) {
+        return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+      }
 
       const existing = await getUserByEmail(emailLower);
       if (existing) {
@@ -612,17 +1014,16 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
             ]
           : [];
 
-       const user = await createUser({
-         id,
-         name,
-         email: emailLower,
-         password: password || undefined,
-         googleId: googleId || undefined,
-         role: userRole,
-         membershipPlan: null,
-         membershipStatus: 'inactive',
-         permissions
-       });
+      const user = await createUser({
+        id,
+        name,
+        email: emailLower,
+        password,
+        role: userRole,
+        membershipPlan: null,
+        membershipStatus: 'inactive',
+        permissions
+      });
 
       res.json({ success: true, user });
     } catch (err: any) {
@@ -670,7 +1071,6 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
    });
 
    // API Route - Generate unique member credentials and email them automatically
-   // Members authenticate via Google SSO; no password is generated.
    app.post('/api/admin/members/credentials', requireAdmin, async (req, res) => {
      try {
        const { name, email, role } = req.body;
@@ -688,6 +1088,8 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
        }
 
        const memberId = 'mem-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+       const password = crypto.randomBytes(10).toString('base64url').substring(0, 16);
+
        const userRole = role === 'admin' ? 'admin' : 'member';
        const permissions =
          userRole === 'admin'
@@ -705,27 +1107,30 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
          id: memberId,
          name,
          email: emailLower,
+         password,
          role: userRole,
          membershipPlan: null,
-         membershipStatus: 'active',
+         membershipStatus: 'inactive',
          permissions
        });
 
        const baseUrl = process.env.BASE_URL || 'https://www.aic-aiml.org';
-       const subject = '[AICAIML] Member Access Ready';
+       const subject = '[AICAIML] Your Member Portal Credentials';
        const emailBody = `Dear ${name},
 
-Your AICAIML member portal access has been prepared using Google Sign-In.
+Your AICAIML member portal account has been created.
 
-MEMBER ID: ${memberId}
-Email: ${emailLower}
+MEMBER CREDENTIALS:
+- Member ID / Username: ${memberId}
+- Password: ${password}
 
 You can sign in at: ${baseUrl}/#login
 
-Simply click "Sign in with Google" using the Google account linked to ${emailLower}.
-No password is required — your identity is verified through Google.
-
+Your account is registered with the email address: ${emailLower}
 Role: ${userRole === 'admin' ? 'Administrator' : 'Member'}
+
+Please keep these credentials secure and do not share them with anyone.
+You may change your password after your first login.
 
 If you did not expect this email, please contact support@aic-aiml.org.
 
@@ -742,6 +1147,10 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
            name: user.name,
            email: user.email,
            role: user.role
+         },
+         credentials: {
+           memberId,
+           password
          },
          emailSent: sent
        });
@@ -926,7 +1335,13 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
   });
 
   // API Route - General Enquiry Form Submission with Honeypot Anti-Spam Check
-  app.post('/api/enquiry/submit', async (req, res) => {
+  const enquiryValidation = validateRequestBody({
+    name: { required: true, type: 'string', minLength: 2 },
+    email: { required: true, type: 'string', minLength: 3 },
+    message: { required: true, type: 'string', minLength: 5 }
+  });
+
+  app.post('/api/enquiry/submit', enquiryValidation, async (req, res) => {
     const { name, email, phone, message, honeypot } = req.body;
 
     // Honeypot spam check - if filled, silently reject or fail with a validation message
@@ -935,8 +1350,8 @@ All India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
       return res.status(400).json({ error: 'Validation failed. Spam activity detected.' });
     }
 
-    if (!name || !email || !message) {
-      return res.status(400).json({ error: 'Name, email, and message are required.' });
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address.' });
     }
 
     const emailLower = email.trim().toLowerCase();
@@ -1025,68 +1440,49 @@ AICAIML Council`;
       return res.status(403).json({ error: 'Email verification required. Please verify your email before submitting.' });
     }
 
-     const existingUser = await getUserByEmail(email);
+     // Allow multiple submissions from the same email for now.
 
-     // In development, auto-reset existing test accounts so the same email can
-     // be re-used to test the full membership workflow end-to-end.
-     if (process.env.NODE_ENV === 'development' && existingUser) {
-       const resetResult = await resetTestAccount(email);
-       if (resetResult.success) {
-         console.log(`[DEV AUTO-RESET] Existing account/email cleared for ${email}`);
+     // In development, optionally reset any existing account/application for this email
+     // so the full workflow can be re-tested cleanly end-to-end.
+     if (process.env.NODE_ENV === 'development') {
+       const existingApp = await getApplicationByEmail(email);
+       if (existingApp && existingApp.data) {
+         const resetResult = await resetTestAccount(email);
+         if (resetResult.success) {
+           console.log(`[DEV AUTO-RESET] Existing application cleared for ${email}`);
+         }
        }
      }
 
-     if (existingUser && process.env.NODE_ENV !== 'development') {
-       return res.status(409).json({ error: 'An account with this email address already exists. If you have forgotten your credentials, please contact support@aic-aiml.org.' });
-     }
+     const membershipNo = 'AIC-' + category.substring(0, 3).toUpperCase() + '-' + Math.floor(100000 + Math.random() * 900000);
+     const applicationId = 'APP-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
-     const existingApp = await getApplicationByEmail(email);
-
-     // In development, auto-reset existing applications too.
-     if (process.env.NODE_ENV === 'development' && existingApp && existingApp.data) {
-       const resetResult = await resetTestAccount(email);
-       if (resetResult.success) {
-         console.log(`[DEV AUTO-RESET] Existing application cleared for ${email}`);
-       }
-     }
-
-     if (existingApp && existingApp.data && process.env.NODE_ENV !== 'development') {
-       return res.status(409).json({
-         error: `An application with this email address has already been submitted (Ref: ${existingApp.data.id}, Status: ${existingApp.data.status}). Each member is allowed only one application per email address.`,
-         existingApplicationId: existingApp.data.id,
-         existingStatus: existingApp.data.status
-       });
-     }
-
-    const membershipNo = 'AIC-' + category.substring(0, 3).toUpperCase() + '-' + Math.floor(100000 + Math.random() * 900000);
-    const applicationId = 'APP-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-
-    const submittedAt = new Date().toISOString();
-    const name = (formData && (formData.fullName || formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName)) || 'Applicant';
-    const phone = String(formData.phone || formData.mobile || formData.mobileNo || '').trim() || undefined;
+     const submittedAt = new Date().toISOString();
+     const name = (formData && (formData.fullName || formData.studentName || formData.applicantName || formData.authorizedRepresentativeName || formData.institutionName || formData.universityName)) || 'Applicant';
+     const phone = String(formData.phone || formData.mobile || formData.mobileNo || '').trim() || undefined;
      const verificationCode = String(Math.floor(100000 + Math.random() * 900000));
      if (process.env.NODE_ENV === 'development') {
        console.log(`[DEV OTP] Membership verification code for ${email} (App: ${applicationId}): ${verificationCode}`);
      }
 
-    try {
-      await insertApplication({
-        id: applicationId,
-        membershipNo,
-        category,
-        name,
-        email,
-        phone,
-        formData: formData || {},
-        submittedAt,
-        verificationCode,
-        createdAt: submittedAt,
-        updatedAt: submittedAt
-      });
-    } catch (err: any) {
-      console.error('Failed to save membership application:', err);
-      return res.status(500).json({ error: err.message || 'Failed to save your application. Please try again.' });
-    }
+     try {
+       await insertApplication({
+         id: applicationId,
+         membershipNo,
+         category,
+         name,
+         email,
+         phone,
+         formData: formData || {},
+         submittedAt,
+         verificationCode,
+         createdAt: submittedAt,
+         updatedAt: submittedAt
+       });
+     } catch (err: any) {
+       console.error('Failed to save membership application:', err);
+       return res.status(500).json({ error: err.message || 'Failed to save your application. Please try again.' });
+     }
 
     const subject = `[AICAIML] Membership Application Submitted - No: ${membershipNo}`;
     const emailBody = `Dear ${name},
@@ -1317,9 +1713,23 @@ Membership & Treasury Desk, AICAIML Council`;
   });
 
   // Vite development integration or production serving
+  let vite: ViteDevServer | undefined;
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
+    vite = await createViteServer({
+      server: {
+        middlewareMode: true,
+        host,
+        port: PORT,
+        strictPort: true,
+        hmr: hmrEnabled
+          ? {
+              host,
+              port: hmrPort,
+              protocol: 'ws',
+              clientPort: hmrPort,
+            }
+          : false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -1331,23 +1741,57 @@ Membership & Treasury Desk, AICAIML Council`;
     });
   }
 
-  // Seed the developer test account on every startup (idempotent).
-  // When Supabase is configured the dev user (vendhanftpwatch@gmail.com / vendhan123)
-  // is always seeded so the initial admin can sign in on first deploy.
-  // Set SEED_DEV_USER=false to opt out on hardened production deployments.
-  if (process.env.SEED_DEV_USER !== 'false') {
-    if (SUPABASE_ENABLED) {
-      await seedDevUser();
-      console.log('Dev account ready: vendhanftpwatch@gmail.com (role: admin, plan: Premium)');
+  // Seed the developer test account only in non-production by default.
+  // In production, require SEED_DEV_USER=true for explicit opt-in.
+  const shouldSeedDevUser = process.env.SEED_DEV_USER === 'true' || (process.env.NODE_ENV !== 'production' && process.env.SEED_DEV_USER !== 'false');
+  if (shouldSeedDevUser) {
+    if (isSupabaseConfigured()) {
+      try {
+        await seedDevUser();
+        console.log('Dev account ready: vendhanftpwatch@gmail.com (role: admin, plan: Premium)');
+      } catch (err) {
+        console.warn('Skipping dev account seeding because the Supabase database is unavailable:', err);
+      }
     } else {
-      console.warn('Supabase is not configured. Dev account available via fallback (vendhanftpwatch@gmail.com / vendhan123).');
+      console.warn('Supabase is not configured. Database-backed features will be unavailable until SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.');
     }
   }
 
   await verifyMailTransporter();
 
+  const server = app.listen(PORT, host);
+  await new Promise<void>((resolve, reject) => {
+    const onListening = () => {
+      server.off('error', onError);
+      resolve();
+    };
+    const onError = (error: Error) => {
+      server.off('listening', onListening);
+      reject(error);
+    };
+
+    server.once('listening', onListening);
+    server.once('error', onError);
+  });
+
+  console.log(`Server running on http://${host}:${PORT}`);
+
+  return { app, server, port: PORT, vite };
+})();
+
+  globalThis.__aicaimlDevServerInstance = startPromise;
+  return startPromise;
 }
 
-startServer().catch((err) => {
-  console.error('Error starting server:', err);
-});
+if (process.env.NODE_ENV !== 'test') {
+  process.on('SIGINT', () => {
+    shutdownServer().finally(() => process.exit(0));
+  });
+  process.on('SIGTERM', () => {
+    shutdownServer().finally(() => process.exit(0));
+  });
+
+  startServer().catch((err) => {
+    console.error('Error starting server:', err);
+  });
+}

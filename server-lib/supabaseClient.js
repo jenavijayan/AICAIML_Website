@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
 const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
@@ -12,7 +13,11 @@ const SUPABASE_ENABLED =
 
 let supabase = null;
 if (SUPABASE_ENABLED) {
-  supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+  supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    realtime: {
+      transport: WebSocket
+    }
+  });
 }
 
 export { supabase, SUPABASE_ENABLED }

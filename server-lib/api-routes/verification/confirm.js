@@ -1,3 +1,6 @@
+import { consumeVerificationCode } from '../../verificationStore.js';
+import { clearVerificationCookie, verifyVerificationCookie } from '../../verificationCookie.js';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -33,12 +36,26 @@ export default async function handler(req, res) {
     }
 
     const cleanCode = String(code).trim();
-    const isTestCode = cleanCode === '123456' || cleanCode === '000000' || cleanCode === '111111' || cleanCode === '999999';
-
-    if (!isTestCode && cleanCode.length !== 6) {
+    if (cleanCode.length !== 6) {
       return res.status(400).json({ error: 'Invalid verification code.' });
     }
 
+    const cookieVerification = verifyVerificationCookie(req, email, cleanCode);
+    if (cookieVerification.found) {
+      if (!cookieVerification.ok) {
+        clearVerificationCookie(res);
+        return res.status(400).json({ error: cookieVerification.error });
+      }
+      clearVerificationCookie(res);
+      return res.json({ success: true, message: 'Email verified successfully.' });
+    }
+
+    const verified = consumeVerificationCode(email, cleanCode);
+    if (!verified.ok) {
+      return res.status(400).json({ error: verified.error });
+    }
+
+    clearVerificationCookie(res);
     res.json({ success: true, message: 'Email verified successfully.' });
   } catch (err) {
     console.error('Verification confirm error:', err);

@@ -182,45 +182,45 @@ export default function MembershipForms({ category, onBack }: FormProps) {
     }
   });
 
-  const resetAll = () => {
-    setSuccessData(null);
-    setVerified(false);
-    resetVerification();
-  };
+   const resetAll = () => {
+     setSuccessData(null);
+     setVerified(false);
+     resetVerification();
+   };
 
-  const handleResetTestAccount = async () => {
-    if (!commonForm.email) {
-      setError('Please enter an email address to reset.');
-      return;
-    }
-    if (!confirm(`Reset ALL test data for ${commonForm.email}? This cannot be undone.`)) {
-      return;
-    }
-    setResetting(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/dev/reset-account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: commonForm.email })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Reset failed.');
-      }
-      setVerified(false);
-      resetVerification();
-      setSuccessData(null);
-      console.log('[DEV RESET] Success:', data);
-      setTimeout(() => setResetting(false), 30000);
-    } catch (err: any) {
-      setError(err.message || 'Reset failed. Try again.');
-    } finally {
-      setResetting(false);
-    }
-  };
+   const handleResetTestAccount = async () => {
+     if (!commonForm.email) {
+       setError('Please enter an email address to reset.');
+       return;
+     }
+     if (!confirm(`Reset ALL test data for ${commonForm.email}? This cannot be undone.`)) {
+       return;
+     }
+     setResetting(true);
+     setError(null);
+     try {
+       const res = await fetch('/api/dev/reset-account', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ email: commonForm.email })
+       });
+       const data = await res.json();
+       if (!res.ok) {
+         throw new Error(data.error || 'Reset failed.');
+       }
+       setVerified(false);
+       resetVerification();
+       setSuccessData(null);
+       console.log('[DEV RESET] Success:', data);
+       setTimeout(() => setResetting(false), 30000);
+     } catch (err: any) {
+       setError(err.message || 'Reset failed. Try again.');
+     } finally {
+       setResetting(false);
+     }
+   };
 
-  // Submit Handler
+   // Submit Handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -229,6 +229,10 @@ export default function MembershipForms({ category, onBack }: FormProps) {
     const isExempt = commonForm.email.trim().toLowerCase() === EXEMPT_ADMIN_EMAIL;
 
     if (!verified && !isExempt) {
+      const sent = await requestCode();
+      if (!sent) {
+        setError('Failed to send verification code. Please try again.');
+      }
       setLoading(false);
       return;
     }
@@ -282,36 +286,33 @@ export default function MembershipForms({ category, onBack }: FormProps) {
     }
 
     try {
-      if (!verified) {
-        const sent = await requestCode();
-        if (!sent) {
-          throw new Error('Failed to send verification code. Please try again.');
-        }
-        setLoading(false);
-        return;
-      }
-
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-      const formPayload = new FormData();
-      formPayload.append('category', category);
-      formPayload.append('formData', JSON.stringify(payload));
-      formPayload.append('honeypot', honeypot);
-      if (commonForm.documentFile) {
-        formPayload.append('document', commonForm.documentFile);
-      }
-
       const response = await fetch('/api/membership/submit', {
         method: 'POST',
-        body: formPayload,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category,
+          formData: payload,
+          honeypot
+        }),
         signal: controller.signal,
         credentials: 'include'
       });
 
       clearTimeout(timeoutId);
 
-      const resData = await response.json();
+      const raw = await response.text();
+      let resData: any = {};
+      if (raw) {
+        try {
+          resData = JSON.parse(raw);
+        } catch {
+          const snippet = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+          throw new Error(`Server returned an invalid response. ${snippet || 'Non-JSON body received.'}`);
+        }
+      }
       if (!response.ok) {
         throw new Error(resData.error || 'Failed to submit application.');
       }
@@ -385,26 +386,14 @@ export default function MembershipForms({ category, onBack }: FormProps) {
 
           <div className="text-center py-4 space-y-3">
             <p className="text-xs text-slate-500">
-               Note: Under AICAIML Bylaws, Phase 1 applications do not require immediate fee payment. Upon successful verification, you will receive an approval email with instructions to sign in using your Google account — no password required.
+              Note: Under AICAIML Bylaws, Phase 1 applications do not require immediate fee payment. Your login credentials to access the digital membership portal will be issued upon successful verification.
             </p>
             <Button icon={ArrowLeft} onClick={onBack}>
               Return to Membership Categories
             </Button>
           </div>
-             </div>
-             {isDev && commonForm.email && (
-               <div className="sm:col-span-2 pt-2">
-                 <button
-                   type="button"
-                   onClick={handleResetTestAccount}
-                   disabled={resetting}
-                   className="text-xs px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-md font-medium disabled:opacity-50 transition-colors"
-                 >
-                   {resetting ? 'Resetting...' : 'Reset Test Account (Dev)'}
-                 </button>
-               </div>
-             )}
-           </div>
+        </div>
+      </div>
     );
   }
 
@@ -489,10 +478,22 @@ export default function MembershipForms({ category, onBack }: FormProps) {
                 placeholder="you@example.com"
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-corp-blue focus:outline-none"
                 value={commonForm.email}
-                onChange={(e) => setCommonForm({ ...commonForm, email: e.target.value })}
-              />
-            </div>
-          </div>
+               onChange={(e) => setCommonForm({ ...commonForm, email: e.target.value })}
+               />
+             </div>
+             {isDev && commonForm.email && (
+               <div className="sm:col-span-2 pt-2">
+                 <button
+                   type="button"
+                   onClick={handleResetTestAccount}
+                   disabled={resetting}
+                   className="text-xs px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-md font-medium disabled:opacity-50 transition-colors"
+                 >
+                   {resetting ? 'Resetting...' : 'Reset Test Account (Dev)'}
+                 </button>
+               </div>
+             )}
+           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>

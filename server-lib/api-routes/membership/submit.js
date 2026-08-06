@@ -1,4 +1,5 @@
 import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
+import { resetTestAccount } from '../../authFallback.js';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 
@@ -43,6 +44,23 @@ async function sendEmail(to, subject, text) {
   }
 }
 
+async function insertApplicationCompat(payload) {
+  const optionalColumns = ['phone', 'created_at', 'updated_at'];
+  const current = { ...payload };
+
+  while (true) {
+    const result = await supabase.from('applications').insert(current);
+    if (!result.error) return result;
+
+    const missingOptional = optionalColumns.find((column) =>
+      Object.prototype.hasOwnProperty.call(current, column) && String(result.error.message || '').toLowerCase().includes(column.toLowerCase())
+    );
+
+    if (!missingOptional) return result;
+    delete current[missingOptional];
+  }
+}
+
 export default async function handler(req, res) {
   if (!SUPABASE_ENABLED) {
     return res.status(500).json({ error: 'Supabase is not configured on this deployment.' });
@@ -76,43 +94,17 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Email verification required. Please verify your email before submitting.' });
     }
 
-    const { data: existingUser } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
+    // Allow multiple submissions from the same email for now.
 
-    // In development, auto-reset existing test accounts so the same email can be
-    // re-used to test the full membership workflow end-to-end.
-    if (process.env.NODE_ENV === 'development' && existingUser) {
-      const userRows = await supabase.from('users').select('id').eq('email', email);
-      if (userRows?.data?.length > 0) {
-        const userIds = userRows.data.map((u) => u.id);
-        await supabase.from('sessions').delete().in('user_id', userIds);
-        await supabase.from('certificates').delete().in('user_id', userIds);
-        await supabase.from('enrollments').delete().in('user_id', userIds);
-      }
-      await supabase.from('users').delete().eq('email', email);
-      await supabase.from('applications').delete().eq('email', email);
-      await supabase.from('enquiries').delete().eq('email', email);
-      await supabase.from('event_registrations').delete().eq('email', email);
-      await supabase.from('memberships').delete().eq('email', email);
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[DEV AUTO-RESET] Existing account/email cleared for ${email}`);
-      }
-    }
-
-    if (existingUser && process.env.NODE_ENV !== 'development') {
-      return res.status(409).json({ error: 'An account with this email address already exists. If you have forgotten your credentials, please contact support@aic-aiml.org.' });
-    }
-
-    const { data: existingApp } = await supabase.from('applications').select('*').eq('email', email).order('submitted_at', { ascending: false }).limit(1).maybeSingle();
-    if (existingApp) {
-      if (process.env.NODE_ENV === 'development') {
-        await supabase.from('applications').delete().eq('email', email);
-        console.log(`[DEV AUTO-RESET] Existing application cleared for ${email}`);
-      } else {
-        return res.status(409).json({
-          error: `An application with this email address has already been submitted (Ref: ${existingApp.id}, Status: ${existingApp.status}). Each member is allowed only one application per email address.`,
-          existingApplicationId: existingApp.id,
-          existingStatus: existingApp.status
-        });
+    // In development, auto-reset any existing account/application for this email
+    // so the full workflow can be re-tested cleanly end-to-end.
+    if (process.env.NODE_ENV === 'development') {
+      const { data: existingApp } = await supabase.from('applications').select('id').eq('email', email).limit(1).maybeSingle();
+      if (existingApp) {
+        const resetResult = await resetTestAccount(email);
+        if (resetResult.success) {
+          console.log(`[DEV AUTO-RESET] Existing application cleared for ${email}`);
+        }
       }
     }
 
@@ -126,7 +118,7 @@ export default async function handler(req, res) {
       console.log(`[DEV OTP] Membership verification code for ${email} (App: ${applicationId}): ${verificationCode}`);
     }
 
-    const { error } = await supabase.from('applications').insert({
+    const { error } = await insertApplicationCompat({
       id: applicationId,
       membership_no: membershipNo,
       category,

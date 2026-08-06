@@ -1,15 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 
 const supabaseUrl = process.env.SUPABASE_URL?.trim();
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-
-export const SUPABASE_ENABLED = Boolean(
-  supabaseUrl &&
-  supabaseServiceRoleKey &&
-  supabaseUrl !== 'https://your-project.supabase.co' &&
-  !supabaseUrl.includes('your-project.supabase.co') &&
-  supabaseServiceRoleKey !== 'your-service-role-key'
-);
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
 const missingSupabaseError = new Error(
   'Supabase is not configured. Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env'
@@ -37,6 +30,26 @@ function createDisabledSupabaseClient() {
   return proxy;
 }
 
+export const SUPABASE_ENABLED = Boolean(
+  supabaseUrl &&
+  serviceRoleKey &&
+  supabaseUrl !== 'https://your-project.supabase.co' &&
+  !supabaseUrl.includes('your-project.supabase.co') &&
+  serviceRoleKey !== 'your-service-role-key'
+);
+
 export const supabase = SUPABASE_ENABLED
-  ? createClient(supabaseUrl!, supabaseServiceRoleKey!)
+  ? createClient(supabaseUrl!, serviceRoleKey!, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false
+      },
+      realtime: {
+        transport: WebSocket
+      }
+    })
   : createDisabledSupabaseClient();
+
+export function isSupabaseConfigured() {
+  return SUPABASE_ENABLED;
+}

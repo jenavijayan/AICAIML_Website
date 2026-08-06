@@ -54,8 +54,8 @@ export default function Header({ currentPage, setCurrentPage }: HeaderProps) {
     { id: 'benefits-view', label: 'Benefits' },
     { id: 'contact', label: 'Contact' },
     ...(user?.role === 'admin' ? [{ id: 'admin', label: 'Admin' }] : []),
-    ...(user && user.role !== 'admin' ? [{ id: 'member', label: 'Member Portal' }] : []),
-    ...(user ? [] : [{ id: 'login', label: 'Login' }])
+    ...(user?.role === 'member' ? [{ id: 'member-dashboard', label: 'Dashboard' }] : []),
+    ...(user ? [] : [{ id: 'login', label: 'Login' }, { id: 'member-login', label: 'Member Login' }])
   ];
 
   const handleNavClick = (pageId: string) => {

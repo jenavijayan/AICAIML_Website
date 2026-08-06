@@ -7,9 +7,12 @@ const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
 const FALLBACK_AUTH_SECRET = process.env.AUTH_SESSION_SECRET || 'aicaiml-dev-session-secret';
 const SESSION_COOKIE = 'aicaiml_session';
 const FALLBACK_USER_ID = 'user-dev-001';
-const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim();
+const FALLBACK_AUTH_ENABLED =
+  String(process.env.AUTH_ALLOW_FALLBACK_AUTH || '').trim().toLowerCase() === 'true' ||
+  process.env.NODE_ENV !== 'production';
 
 function getFallbackUser(email, password, id) {
+  if (!FALLBACK_AUTH_ENABLED) return null;
   const normalizedEmail = (email || '').trim().toLowerCase();
   if (id && id !== FALLBACK_USER_ID) return null;
   if (!normalizedEmail && !password && !id) return null;
@@ -39,6 +42,31 @@ function verifyPassword(password, hash, salt) {
   return candidate.length === stored.length && crypto.timingSafeEqual(candidate, stored);
 }
 
+function isMissingColumnError(error, columnName) {
+  if (!error) return false;
+  return String(error.message || '').toLowerCase().includes(String(columnName || '').toLowerCase());
+}
+
+async function getUsersByEmail(email) {
+  const normalizedEmail = String(email || '').toLowerCase().trim();
+  let query = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', normalizedEmail)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (query.error && isMissingColumnError(query.error, 'created_at')) {
+    query = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', normalizedEmail)
+      .limit(20);
+  }
+
+  return query;
+}
+
 function toPublicUser(row) {
   return {
     id: row.id,
@@ -46,10 +74,10 @@ function toPublicUser(row) {
     email: row.email,
     role: row.role,
     membershipPlan: row.membership_plan,
+    membershipNo: row.membership_no || null,
     membershipStatus: row.membership_status,
-    permissions: Array.isArray(row.permissions) ? row.permissions : (() => { try { return JSON.parse(row.permissions || '[]'); } catch { return []; } })(),
-    photoUrl: row.photo_url || undefined,
-    membershipNo: row.membership_no || undefined
+    mustResetPassword: Boolean(row.must_reset_password),
+    permissions: Array.isArray(row.permissions) ? row.permissions : (() => { try { return JSON.parse(row.permissions || '[]'); } catch { return []; } })()
   };
 }
 
@@ -58,8 +86,44 @@ async function seedDevUser() {
   const { data: byId } = await supabase.from('users').select('*').eq('id', FALLBACK_USER_ID);
   const existingById = Array.isArray(byId) && byId.length > 0 ? byId[0] : null;
   if (existingById) return toPublicUser(existingById);
-  const { data: byEmail } = await supabase.from('users').select('*').eq('email', FALLBACK_AUTH_EMAIL);
-  if (byEmail && byEmail.length > 0) return toPublicUser(byEmail[0]);
+
+  const byEmailQuery = await getUsersByEmail(FALLBACK_AUTH_EMAIL);
+  const byEmail = byEmailQuery.data;
+
+  if (Array.isArray(byEmail) && byEmail.length > 0) {
+    const target = byEmail.find((row) => String(row.role || '').toLowerCase() === 'admin') || byEmail[0];
+    const needsRepair =
+      String(target.role || '').toLowerCase() !== 'admin' ||
+      !target.password_hash ||
+      !target.password_salt ||
+      String(target.membership_status || '').toLowerCase() !== 'active';
+
+    if (!needsRepair) return toPublicUser(target);
+
+    const { hash, salt } = hashPassword(FALLBACK_AUTH_PASSWORD);
+    let repair = await supabase.from('users').update({
+      role: 'admin',
+      password_hash: hash,
+      password_salt: salt,
+      membership_status: 'active',
+      membership_plan: 'Premium',
+      updated_at: new Date().toISOString()
+    }).eq('id', target.id).select('*').single();
+
+    if (repair.error) {
+      repair = await supabase.from('users').update({
+        role: 'admin',
+        password_hash: hash,
+        password_salt: salt,
+        membership_status: 'active',
+        membership_plan: 'Premium'
+      }).eq('id', target.id).select('*').single();
+    }
+
+    if (!repair.error && repair.data) return toPublicUser(repair.data);
+    console.error('Failed to repair fallback admin user:', repair.error);
+  }
+
   const { hash, salt } = hashPassword(FALLBACK_AUTH_PASSWORD);
   const { data, error } = await supabase.from('users').insert({
     id: FALLBACK_USER_ID,
@@ -82,10 +146,20 @@ async function seedDevUser() {
 
 async function getSupabaseUser(email, password) {
   if (!SUPABASE_ENABLED || !supabase) return null;
-  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase().trim()).single();
-  if (error || !data) return null;
-  if (!verifyPassword(password, data.password_hash, data.password_salt)) return null;
-  return toPublicUser(data);
+  const { data, error } = await getUsersByEmail(email);
+  if (error || !Array.isArray(data) || data.length === 0) return null;
+
+  for (const row of data) {
+    try {
+      if (verifyPassword(password, row.password_hash, row.password_salt)) {
+        return toPublicUser(row);
+      }
+    } catch {
+      // Skip malformed legacy rows and continue searching valid candidates.
+    }
+  }
+
+  return null;
 }
 
 async function getSupabaseUserById(userId) {
@@ -203,122 +277,32 @@ function parseJsonBody(req) {
   });
 }
 
-async function verifyGoogleToken(idToken) {
-  if (!GOOGLE_CLIENT_ID) {
-    console.warn('GOOGLE_CLIENT_ID is not set — Google login is disabled.');
-    return null;
-  }
-  try {
-    const { OAuth2Client } = require('google-auth-library');
-    const client = new OAuth2Client(GOOGLE_CLIENT_ID);
-    const ticket = await client.verifyIdToken({
-      idToken,
-      audience: GOOGLE_CLIENT_ID,
-    });
-    const payload = ticket.getPayload();
-    if (!payload || !payload.email || !payload.email_verified) return null;
-    return {
-      email: payload.email,
-      name: payload.name || '',
-      picture: payload.picture || '',
-      googleId: payload.sub
-    };
-  } catch (err) {
-    console.error('Google token verification failed:', err.message);
-    return null;
-  }
-}
-
-async function getOrCreateGoogleUser(info) {
-  if (!SUPABASE_ENABLED || !supabase) return null;
-  const normalizedEmail = info.email.toLowerCase().trim();
-
-  // 1. Check by google_id
-  const { data: byGoogleId } = await supabase.from('users').select('*').eq('google_id', info.googleId).maybeSingle();
-  if (byGoogleId) return toPublicUser(byGoogleId);
-
-  // 2. Check by email
-  const { data: byEmail } = await supabase.from('users').select('*').eq('email', normalizedEmail).maybeSingle();
-  if (byEmail) {
-    if (!byEmail.google_id) {
-      await supabase.from('users').update({ google_id: info.googleId, photo_url: byEmail.photo_url || info.picture }).eq('email', normalizedEmail);
-    }
-    return toPublicUser(byEmail);
-  }
-
-  // 3. Check for approved application
-  const { data: approvedApp } = await supabase
-    .from('applications')
-    .select('*')
-    .eq('email', normalizedEmail)
-    .eq('status', 'Approved')
-    .order('submitted_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!approvedApp) return null;
-
-  // 4. Create member user from approved application
-  const userId = 'mem-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
-  const formData = approvedApp.form_data || {};
-  const memberName =
-    formData.studentName ||
-    formData.applicantName ||
-    formData.authorizedRepresentativeName ||
-    formData.institutionName ||
-    formData.universityName ||
-    info.name;
-
-  const { data, error } = await supabase.from('users').insert({
-    id: userId,
-    name: memberName,
-    email: normalizedEmail,
-    email_verified: true,
-    password_hash: null,
-    password_salt: null,
-    google_id: info.googleId,
-    role: 'member',
-    membership_plan: approvedApp.category || null,
-    membership_no: approvedApp.membership_no || null,
-    membership_status: 'active',
-    permissions: ['access_premium_courses', 'access_course_videos', 'access_downloadable_resources', 'access_quizzes', 'access_certificates', 'access_members_only_pages'],
-    photo_url: info.picture,
-    must_reset_password: false,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }).select('*').single();
-  if (error) {
-    console.error('Failed to create Google member user:', error);
-    return null;
-  }
-   return toPublicUser(data);
-}
-
 async function resetTestAccount(email) {
-   if (!SUPABASE_ENABLED || !supabase) return { success: false, error: 'Supabase is not configured.' };
-   const normalizedEmail = String(email || '').trim().toLowerCase();
-   if (!normalizedEmail) return { success: false, error: 'Email is required.' };
+  if (!SUPABASE_ENABLED || !supabase) return { success: false, error: 'Supabase is not configured.' };
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) return { success: false, error: 'Email is required.' };
 
-   try {
-     const { data: userRows } = await supabase.from('users').select('id').eq('email', normalizedEmail);
-     if (userRows && userRows.length > 0) {
-       const userIds = userRows.map((u) => u.id);
-       await supabase.from('sessions').delete().in('user_id', userIds);
-       await supabase.from('certificates').delete().in('user_id', userIds);
-       await supabase.from('enrollments').delete().in('user_id', userIds);
-     }
-     await supabase.from('users').delete().eq('email', normalizedEmail);
-     await supabase.from('applications').delete().eq('email', normalizedEmail);
-     await supabase.from('enquiries').delete().eq('email', normalizedEmail);
-     await supabase.from('event_registrations').delete().eq('email', normalizedEmail);
-     await supabase.from('memberships').delete().eq('email', normalizedEmail);
-     return { success: true };
-   } catch (err) {
-     console.error('resetTestAccount error:', err);
-     return { success: false, error: err.message || 'Failed to reset test account.' };
-   }
- }
+  try {
+    const { data: userRows } = await supabase.from('users').select('id').eq('email', normalizedEmail);
+    if (userRows && userRows.length > 0) {
+      const userIds = userRows.map((u) => u.id);
+      await supabase.from('sessions').delete().in('user_id', userIds);
+      await supabase.from('certificates').delete().in('user_id', userIds);
+      await supabase.from('enrollments').delete().in('user_id', userIds);
+    }
+    await supabase.from('users').delete().eq('email', normalizedEmail);
+    await supabase.from('applications').delete().eq('email', normalizedEmail);
+    await supabase.from('enquiries').delete().eq('email', normalizedEmail);
+    await supabase.from('event_registrations').delete().eq('email', normalizedEmail);
+    await supabase.from('memberships').delete().eq('email', normalizedEmail);
+    return { success: true };
+  } catch (err) {
+    console.error('resetTestAccount error:', err);
+    return { success: false, error: err.message || 'Failed to reset test account.' };
+  }
+}
 
- export {
+export {
   SESSION_COOKIE,
   FALLBACK_AUTH_EMAIL,
   FALLBACK_AUTH_PASSWORD,
@@ -338,9 +322,5 @@ async function resetTestAccount(email) {
   hashPassword,
   verifyPassword,
    SUPABASE_ENABLED,
-   GOOGLE_CLIENT_ID,
-   verifyGoogleToken,
-   getOrCreateGoogleUser,
    resetTestAccount
- };
-
+ }

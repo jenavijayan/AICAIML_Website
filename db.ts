@@ -7,9 +7,12 @@ const FALLBACK_AUTH_PASSWORD = (process.env.ADMIN_PASSWORD || 'vendhan123').trim
 const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
 const FALLBACK_AUTH_SECRET = process.env.AUTH_SESSION_SECRET || 'aicaiml-dev-session-secret';
 const FALLBACK_USER_ID = 'user-dev-001';
-const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim();
+const FALLBACK_AUTH_ENABLED =
+  String(process.env.AUTH_ALLOW_FALLBACK_AUTH || '').trim().toLowerCase() === 'true' ||
+  process.env.NODE_ENV !== 'production';
 
 function getFallbackUser(email?: string, password?: string, id?: string): PublicUser | null {
+  if (!FALLBACK_AUTH_ENABLED) return null;
   const normalizedEmail = (email || '').trim().toLowerCase();
   if (id && id !== FALLBACK_USER_ID) return null;
   if (!normalizedEmail && !password && !id) return null;
@@ -53,6 +56,31 @@ function verifySignedSessionToken(token: string): PublicUser | null {
   } catch {
     return null;
   }
+}
+
+function isMissingColumnError(error: any, columnName: string) {
+  if (!error) return false;
+  return String(error.message || '').toLowerCase().includes(columnName.toLowerCase());
+}
+
+async function getUsersByEmailRows(email: string) {
+  const normalizedEmail = email.toLowerCase().trim();
+  let query = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', normalizedEmail)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (query.error && isMissingColumnError(query.error, 'created_at')) {
+    query = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', normalizedEmail)
+      .limit(20);
+  }
+
+  return query;
 }
 
 // Supabase-backed data access layer. All functions return Promises, so
@@ -117,10 +145,10 @@ export async function insertApplication(app: {
     verification_code: app.verificationCode || null,
     email_verified: app.emailVerified || 'false',
     created_at: createdAt,
-    updated_at: updatedAt
   });
   if (error) {
-    // Retry with only the essential columns for databases with an older schema
+    // Retry with only essential columns for databases with an older schema
+    // (phone, created_at, updated_at may not exist on legacy Supabase tables)
     const { error: retryError } = await supabase.from('applications').insert({
       id: app.id,
       membership_no: app.membershipNo,
@@ -171,31 +199,28 @@ export async function updateApplicationStatus(
   memberId?: string,
   rejectionReason?: string
 ) {
-  const basePayload: Record<string, string | null> = {
+  const payload: Record<string, string | null> = {
     status,
     reviewed_at: new Date().toISOString(),
   };
-  if (approvalDate) basePayload.approval_date = approvalDate;
+  if (approvalDate) payload.approval_date = approvalDate;
+  if (memberId) payload.member_id = memberId;
+  if (rejectionReason) payload.rejection_reason = rejectionReason;
 
-  let { data, error } = await supabase.from('applications').update(basePayload).eq('id', id).select('*').single();
+  const optionalColumns = ['member_id', 'approval_date', 'rejection_reason', 'reviewed_at', 'reviewed_by', 'updated_at'];
+  const current = { ...payload };
 
-  if (error && (memberId || rejectionReason)) {
-    const extraPayload: Record<string, string | null> = { ...basePayload };
-    if (memberId) extraPayload.member_id = memberId;
-    if (rejectionReason) extraPayload.rejection_reason = rejectionReason;
-    const retry = await supabase.from('applications').update(extraPayload).eq('id', id).select('*').single();
-    if (retry.error) {
-      const minimal = await supabase.from('applications').update(basePayload).eq('id', id).select('*').single();
-      if (minimal.error) throw minimal.error;
-      data = minimal.data;
-    } else {
-      data = retry.data;
-    }
-  } else if (error) {
-    throw error;
+  while (true) {
+    const { data, error } = await supabase.from('applications').update(current).eq('id', id).select('*').single();
+    if (!error) return data;
+
+    const missingOptional = optionalColumns.find((col) =>
+      Object.prototype.hasOwnProperty.call(current, col) && String(error.message || '').toLowerCase().includes(col.toLowerCase())
+    );
+    if (!missingOptional) throw error;
+
+    delete current[missingOptional];
   }
-
-  return data;
 }
 
 // --- Event Registrations ---
@@ -493,10 +518,10 @@ export interface PublicUser {
   email: string;
   role: string;
   membershipPlan: string | null;
+  membershipNo?: string | null;
   membershipStatus: string;
+  mustResetPassword?: boolean;
   permissions: string[];
-  photoUrl?: string;
-  membershipNo?: string;
 }
 
 function toPublicUser(row: any): PublicUser {
@@ -506,10 +531,10 @@ function toPublicUser(row: any): PublicUser {
     email: row.email,
     role: row.role,
     membershipPlan: row.membership_plan,
+    membershipNo: row.membership_no || null,
     membershipStatus: row.membership_status,
-    permissions: Array.isArray(row.permissions) ? row.permissions : JSON.parse(row.permissions || '[]'),
-    photoUrl: row.photo_url || undefined,
-    membershipNo: row.membership_no || undefined
+    mustResetPassword: Boolean(row.must_reset_password),
+    permissions: Array.isArray(row.permissions) ? row.permissions : JSON.parse(row.permissions || '[]')
   };
 }
 
@@ -517,36 +542,25 @@ export async function createUser(user: {
   id: string;
   name: string;
   email: string;
-  password?: string;
-  googleId?: string;
+  password: string;
   role: string;
   membershipPlan?: string | null;
   membershipStatus: string;
   permissions: string[];
   membershipNo?: string;
-  photoUrl?: string;
 }): Promise<PublicUser> {
-  let passwordHash: string | null = null;
-  let passwordSalt: string | null = null;
-  if (user.password) {
-    const { hash, salt } = hashPassword(user.password);
-    passwordHash = hash;
-    passwordSalt = salt;
-  }
+  const { hash, salt } = hashPassword(user.password);
   const baseRecord: Record<string, any> = {
     id: user.id,
     name: user.name,
     email: user.email.toLowerCase().trim(),
-    password_hash: passwordHash,
-    password_salt: passwordSalt,
-    google_id: user.googleId || null,
+    password_hash: hash,
+    password_salt: salt,
     role: user.role,
     membership_plan: user.membershipPlan || null,
     membership_status: user.membershipStatus,
     permissions: user.permissions,
-    photo_url: user.photoUrl || null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
+    created_at: new Date().toISOString()
   };
 
   if (user.membershipNo) {
@@ -576,138 +590,28 @@ export async function verifyCredentials(email: string, password: string): Promis
     return getFallbackUser(email, password) || null;
   }
 
-  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase().trim()).single();
-  if (error || !data) {
+  const { data, error } = await getUsersByEmailRows(email);
+
+  if (error || !Array.isArray(data) || data.length === 0) {
     // User not found in Supabase — fall back to dev credentials so the
     // initial admin account works even before seedDevUser has run.
     return getFallbackUser(email, password) || null;
   }
-  if (!verifyPassword(password, data.password_hash, data.password_salt)) {
+
+  const matched = data.find((row) => {
+    try {
+      return verifyPassword(password, row.password_hash, row.password_salt);
+    } catch {
+      return false;
+    }
+  });
+
+  if (!matched) {
     // Password mismatch in Supabase — fall back to dev credentials as a
     // safety net (e.g. seed re-creation or credential drift).
     return getFallbackUser(email, password) || null;
   }
-  return toPublicUser(data);
-}
-
-export interface GoogleUserInfo {
-  email: string;
-  name: string;
-  picture: string;
-  googleId: string;
-}
-
-export async function verifyGoogleToken(idToken: string): Promise<GoogleUserInfo | null> {
-  if (!GOOGLE_CLIENT_ID) {
-    console.warn('GOOGLE_CLIENT_ID is not set — Google login is disabled.');
-    return null;
-  }
-  try {
-    const { OAuth2Client } = require('google-auth-library');
-    const client = new OAuth2Client(GOOGLE_CLIENT_ID);
-    const ticket = await client.verifyIdToken({
-      idToken,
-      audience: GOOGLE_CLIENT_ID,
-    });
-    const payload = ticket.getPayload();
-    if (!payload || !payload.email || !payload.email_verified) return null;
-    return {
-      email: payload.email,
-      name: payload.name || '',
-      picture: payload.picture || '',
-      googleId: payload.sub
-    };
-  } catch (err: any) {
-    console.error('Google token verification failed:', err.message);
-    return null;
-  }
-}
-
-export async function getOrCreateGoogleUser(info: GoogleUserInfo): Promise<PublicUser | null> {
-  if (!SUPABASE_ENABLED) return null;
-
-  const normalizedEmail = info.email.toLowerCase().trim();
-
-  // 1. Check for existing user by google_id (fastest path).
-  const { data: byGoogleId, error: errById } = await supabase
-    .from('users')
-    .select('*')
-    .eq('google_id', info.googleId)
-    .maybeSingle();
-  if (byGoogleId) return toPublicUser(byGoogleId);
-
-  // 2. Check for existing user by email.
-  const { data: byEmail, error: errByEmail } = await supabase
-    .from('users')
-    .select('*')
-    .eq('email', normalizedEmail)
-    .maybeSingle();
-
-  if (byEmail) {
-    // Link the Google ID to the existing account (if not already linked).
-    if (!byEmail.google_id) {
-      await supabase
-        .from('users')
-        .update({ google_id: info.googleId, photo_url: byEmail.photo_url || info.picture })
-        .eq('email', normalizedEmail);
-    }
-    return toPublicUser(byEmail);
-  }
-
-  // 3. Check for an approved membership application with this email.
-  const { data: approvedApp, error: appErr } = await supabase
-    .from('applications')
-    .select('*')
-    .eq('email', normalizedEmail)
-    .eq('status', 'Approved')
-    .order('submitted_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!approvedApp) return null;
-
-  // 4. Create a new member user linked to Google.
-  const userId = 'mem-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
-  const formData = approvedApp.form_data || {};
-  const memberName =
-    formData.studentName ||
-    formData.applicantName ||
-    formData.authorizedRepresentativeName ||
-    formData.institutionName ||
-    formData.universityName ||
-    info.name;
-
-  const result = await supabase.from('users').insert({
-    id: userId,
-    name: memberName,
-    email: normalizedEmail,
-    email_verified: true,
-    password_hash: null,
-    password_salt: null,
-    google_id: info.googleId,
-    role: 'member',
-    membership_plan: approvedApp.category || null,
-    membership_no: approvedApp.membership_no || null,
-    membership_status: 'active',
-    permissions: [
-      'access_premium_courses',
-      'access_course_videos',
-      'access_downloadable_resources',
-      'access_quizzes',
-      'access_certificates',
-      'access_members_only_pages'
-    ],
-    photo_url: info.picture,
-    must_reset_password: false,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }).select('*').single();
-
-  if (result.error) {
-    console.error('Failed to create Google member user:', result.error);
-    return null;
-  }
-  return toPublicUser(result.data);
+  return toPublicUser(matched);
 }
 
 export async function updateUserPassword(email: string, currentPassword: string, newPassword: string): Promise<boolean> {
@@ -793,8 +697,41 @@ export async function seedDevUser(): Promise<PublicUser> {
   const existingById = Array.isArray(byId) && byId.length > 0 ? byId[0] : null;
   if (existingById) return toPublicUser(existingById);
 
-  const byEmail = await getUserByEmail('vendhanftpwatch@gmail.com');
-  if (byEmail) return byEmail;
+  const byEmailQuery = await getUsersByEmailRows('vendhanftpwatch@gmail.com');
+  const byEmailRows = byEmailQuery.data;
+
+  if (Array.isArray(byEmailRows) && byEmailRows.length > 0) {
+    const target = byEmailRows.find((row) => String(row.role || '').toLowerCase() === 'admin') || byEmailRows[0];
+    const needsRepair =
+      String(target.role || '').toLowerCase() !== 'admin' ||
+      !target.password_hash ||
+      !target.password_salt ||
+      String(target.membership_status || '').toLowerCase() !== 'active';
+
+    if (!needsRepair) return toPublicUser(target);
+
+    const { hash, salt } = hashPassword('vendhan123');
+    let repair = await supabase.from('users').update({
+      role: 'admin',
+      password_hash: hash,
+      password_salt: salt,
+      membership_status: 'active',
+      membership_plan: 'Premium',
+      updated_at: new Date().toISOString()
+    }).eq('id', target.id).select('*').single();
+
+    if (repair.error) {
+      repair = await supabase.from('users').update({
+        role: 'admin',
+        password_hash: hash,
+        password_salt: salt,
+        membership_status: 'active',
+        membership_plan: 'Premium'
+      }).eq('id', target.id).select('*').single();
+    }
+
+    if (!repair.error && repair.data) return toPublicUser(repair.data);
+  }
 
   return createUser({
     id: 'user-dev-001',
@@ -850,35 +787,32 @@ export async function resetTestAccount(email: string): Promise<{ success: boolea
   let deletedApplication = false;
 
   try {
-    // 1. Delete sessions for users with this email (cascade would handle it,
-    //    but we delete explicitly for clarity).
+    // 1. Delete sessions, certificates, and enrollments for users with this email
     const { data: userRows } = await supabase.from('users').select('id').eq('email', normalizedEmail);
     if (userRows && userRows.length > 0) {
       const userIds = userRows.map((u: any) => u.id);
       await supabase.from('sessions').delete().in('user_id', userIds);
-      // 2. Delete certificates referencing this user
       await supabase.from('certificates').delete().in('user_id', userIds);
-      // 3. Delete enrollments
       await supabase.from('enrollments').delete().in('user_id', userIds);
     }
 
-    // 4. Delete the user record itself
+    // 2. Delete the user record itself
     const { error: userError } = await supabase.from('users').delete().eq('email', normalizedEmail);
     if (userError && userError.code !== 'PGRST116') throw userError;
     deletedUser = true;
 
-    // 5. Delete membership applications
+    // 3. Delete membership applications
     const { error: appError } = await supabase.from('applications').delete().eq('email', normalizedEmail);
     if (appError && appError.code !== 'PGRST116') throw appError;
     deletedApplication = true;
 
-    // 6. Delete enquiries
+    // 4. Delete enquiries
     await supabase.from('enquiries').delete().eq('email', normalizedEmail);
 
-    // 7. Delete event registrations
+    // 5. Delete event registrations
     await supabase.from('event_registrations').delete().eq('email', normalizedEmail);
 
-    // 8. Delete membership payments
+    // 6. Delete membership payments
     await supabase.from('memberships').delete().eq('email', normalizedEmail);
 
     return { success: true, deletedUser, deletedApplication };
