@@ -1,16 +1,11 @@
-import crypto from 'crypto';
 import https from 'https';
 import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
 import {
   SESSION_COOKIE,
   parseJsonBody,
   createSupabaseSession,
-  toPublicUser,
-  getSupabaseSessionUser,
-  verifySignedSessionToken
+  toPublicUser
 } from '../../authFallback.js';
-
-const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 
 function nowIso() {
   return new Date().toISOString();
@@ -49,6 +44,8 @@ function createSignedSessionForUser(userRow) {
 }
 
 async function verifyGoogleIdToken(idToken) {
+  const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+
   if (!idToken) {
     throw new Error('Google ID token is required.');
   }
