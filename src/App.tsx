@@ -28,6 +28,8 @@ const EventsProjects = lazy(() => import('./pages/EventsProjects'));
 const Benefits = lazy(() => import('./pages/Benefits'));
 const Login = lazy(() => import('./pages/Login'));
 const MemberLogin = lazy(() => import('./pages/MemberLogin'));
+const MemberWelcome = lazy(() => import('./pages/MemberWelcome'));
+const MemberAccessDenied = lazy(() => import('./pages/MemberAccessDenied'));
 const MemberDashboard = lazy(() => import('./pages/MemberDashboard'));
 const SetPassword = lazy(() => import('./pages/SetPassword'));
 const Legal = lazy(() => import('./pages/Legal'));
@@ -201,7 +203,7 @@ function AppShell() {
     const handleHashChange = () => {
       const rawHash = window.location.hash.replace('#', '');
       const [hashPath, hashQuery = ''] = rawHash.split('?');
-      if (hashPath && ['home', 'know-aicaiml', 'courses', 'learners', 'events-projects', 'membership', 'login', 'member-login', 'member-dashboard', 'set-password', 'verification', 'contact', 'privacy', 'terms', 'benefits-view'].includes(hashPath)) {
+         if (hashPath && ['home', 'know-aicaiml', 'courses', 'learners', 'events-projects', 'membership', 'login', 'member-login', 'member-welcome', 'member-access-denied', 'member-dashboard', 'set-password', 'verification', 'contact', 'privacy', 'terms', 'benefits-view'].includes(hashPath)) {
         setCurrentPage(hashPath);
         if (hashPath === 'set-password') {
           const params = new URLSearchParams(hashQuery);
@@ -447,6 +449,22 @@ function AppShell() {
                 />
               </Suspense>
             )}
+
+             {currentPage === 'member-welcome' && (
+               <Suspense fallback={<RouteFallback />}>
+                 <MemberWelcome
+                   setCurrentPage={setCurrentPage}
+                 />
+               </Suspense>
+             )}
+
+             {currentPage === 'member-access-denied' && (
+               <Suspense fallback={<RouteFallback />}>
+                 <MemberAccessDenied
+                   setCurrentPage={setCurrentPage}
+                 />
+               </Suspense>
+             )}
 
             {currentPage === 'set-password' && (
               <Suspense fallback={<RouteFallback />}>

@@ -5,6 +5,7 @@ import authMeHandler from '../server-lib/api-routes/auth/me.js';
 import memberLoginHandler from '../server-lib/api-routes/auth/member-login.js';
 import memberSetPasswordHandler from '../server-lib/api-routes/auth/member-set-password.js';
 import memberDashboardHandler from '../server-lib/api-routes/auth/member-dashboard.js';
+import memberGoogleHandler from '../server-lib/api-routes/auth/member-google.js';
 import verifyHandler from '../server-lib/api-routes/verify.js';
 import testimonialsHandler from '../server-lib/api-routes/testimonials.js';
 import verificationRequestHandler from '../server-lib/api-routes/verification/request.js';
@@ -68,6 +69,9 @@ export default async function handler(req, res) {
 	}
 	if (method === 'POST' && (path === '/auth/member/login' || path === '/api/auth/member/login')) {
 		return memberLoginHandler(req, res);
+	}
+	if (method === 'POST' && (path === '/auth/member/google' || path === '/api/auth/member/google')) {
+		return memberGoogleHandler(req, res);
 	}
 	if (method === 'POST' && (path === '/auth/member/set-password' || path === '/api/auth/member/set-password')) {
 		return memberSetPasswordHandler(req, res);

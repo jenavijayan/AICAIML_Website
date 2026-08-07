@@ -1,38 +1,169 @@
-import React, { useState } from 'react';
-import { Eye, EyeOff, AlertTriangle, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { Button, IconButton, TextField } from '../components/ui';
+import { Button } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
+
+const GIS_SCRIPT_ID = 'aicaiml-gis';
+const GOOGLE_CLIENT_ID = (import.meta?.env?.VITE_GOOGLE_CLIENT_ID || '').trim();
 
 interface MemberLoginProps {
   setCurrentPage: (page: string) => void;
   redirectAfterLogin?: string | null;
 }
 
-export default function MemberLogin({ setCurrentPage, redirectAfterLogin }: MemberLoginProps) {
-  useDocumentMeta('Member Portal Login', 'Sign in to access your AICAIML member dashboard, profile, and resources.');
-
-  const { memberLogin } = useAuth();
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const result = await memberLogin(identifier, password);
-    setLoading(false);
-
-    if (!result.success) {
-      setError(result.error || 'Unable to sign in.');
+function loadGoogleGisScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined') {
+      reject(new Error('Google Sign-In is not available on this environment.'));
+      return;
+    }
+    const existing = document.getElementById(GIS_SCRIPT_ID) as HTMLScriptElement | null;
+    if (existing) {
+      const onReady = () => {
+        if (window.google?.accounts?.id) {
+          resolve();
+        } else if (existing.dataset.loaded === 'true') {
+          resolve();
+        } else {
+          setTimeout(onReady, 50);
+        }
+      };
+      onReady();
       return;
     }
 
-    setCurrentPage(redirectAfterLogin || 'member-dashboard');
+    const script = document.createElement('script');
+    script.id = GIS_SCRIPT_ID;
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      let checks = 0;
+      const poll = () => {
+        if (window.google?.accounts?.id) {
+          script.dataset.loaded = 'true';
+          resolve();
+          return;
+        }
+        if (checks < 40) {
+          checks += 1;
+          setTimeout(poll, 50);
+          return;
+        }
+        reject(new Error('Google Sign-In library failed to initialize.'));
+      };
+      poll();
+    };
+    script.onerror = () => {
+      reject(new Error('Failed to load Google Sign-In library.'));
+    };
+    document.body.appendChild(script);
+  });
+}
+
+declare global {
+  interface Window {
+    google?: {
+      accounts?: {
+        id?: {
+          initialize: (config: Record<string, unknown>) => void;
+          prompt: (callback?: (notification: Record<string, unknown>) => void) => void;
+          renderButton: (parent: HTMLElement | null, options?: Record<string, unknown>) => void;
+          disableAutoSelect: () => void;
+        };
+      };
+    };
+  }
+}
+
+export default function MemberLogin({ setCurrentPage, redirectAfterLogin }: MemberLoginProps) {
+  useDocumentMeta('Member Portal Login', 'Sign in with your approved Google account to access the AICAIML member portal.');
+
+  const { memberGoogleLogin, logout } = useAuth();
+  const buttonRef = useRef<HTMLDivElement | null>(null);
+  const gisInitialized = useRef(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const container = buttonRef.current;
+
+    if (!GOOGLE_CLIENT_ID) {
+      setError('Google Sign-In is not configured. Please contact support.');
+      return;
+    }
+
+    loadGoogleGisScript()
+      .then(() => {
+        if (cancelled || !window.google?.accounts?.id) {
+          setError('Google Sign-In is not available right now. Please try again later.');
+          return;
+        }
+
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: (credential: { credential?: string; select_by?: string }) => {
+            const idToken = credential?.credential;
+            if (!idToken) {
+              setError('Google authentication returned no token. Please try again.');
+              return;
+            }
+            handleGoogleCredential(idToken).catch(() => {});
+          },
+          auto_select_end: true,
+          cancel_on_tap_out: false
+        });
+
+        if (!gisInitialized.current && container) {
+          window.google.accounts.id.renderButton(container, {
+            theme: 'outline',
+            size: 'large',
+            text: 'sign_in_with',
+            shape: 'rectangular',
+            width: 280
+          });
+          window.google.accounts.id.disableAutoSelect();
+          gisInitialized.current = true;
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Google Sign-In is not available right now.');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleGoogleCredential = async (idToken: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await memberGoogleLogin(idToken);
+      if (!result.success) {
+        if (result.notApproved) {
+          setCurrentPage('member-access-denied');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
+        setError(result.error || 'Unable to complete sign-in. Please try again.');
+        return;
+      }
+      setCurrentPage(redirectAfterLogin || 'member-welcome');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {
+      setError('Unable to reach the server. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegisterNow = () => {
+    setCurrentPage('membership');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -44,54 +175,48 @@ export default function MemberLogin({ setCurrentPage, redirectAfterLogin }: Memb
             <ShieldCheck className="w-6 h-6" />
           </div>
           <h1 className="text-2xl font-heading font-bold text-navy">Member Portal Login</h1>
-          <p className="text-xs text-slate-500">Use your approved email or membership ID and password.</p>
+          <p className="text-xs text-slate-500">Sign in with your approved Google account.</p>
         </div>
 
-        <form className="space-y-4" onSubmit={onSubmit}>
-          {error && (
-            <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-3 text-xs flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <TextField
-            label="Email or Membership ID *"
-            required
-            placeholder="you@example.com or AICAIML-2026-0001"
-            value={identifier}
-            onChange={(e) => setIdentifier(e.target.value)}
-          />
-
-          <div>
-            <label htmlFor="member-login-password" className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-              Password *
-            </label>
-            <div className="relative">
-              <input
-                id="member-login-password"
-                type={showPassword ? 'text' : 'password'}
-                required
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-md border border-slate-300 pl-3 pr-10 py-2 text-sm focus:border-corp-blue focus:outline-none"
-                placeholder="••••••••"
-              />
-              <IconButton
-                icon={showPassword ? EyeOff : Eye}
-                label={showPassword ? 'Hide password' : 'Show password'}
-                size="sm"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2"
-              />
-            </div>
+        {error && (
+          <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-3 text-xs flex items-start gap-2 mb-4">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>{error}</span>
           </div>
+        )}
 
-          <Button type="submit" loading={loading} className="w-full justify-center mt-2">
-            {loading ? 'Signing in...' : 'Sign In to Dashboard'}
+        {loading && (
+          <div className="text-center py-6 text-sm text-slate-500">
+            Verifying your membership...
+          </div>
+        )}
+
+        <div className="flex justify-center">
+          <div ref={buttonRef} className="w-full flex justify-center" />
+        </div>
+
+        <div className="mt-6 text-center text-xs text-slate-500">
+          By signing in, you agree that your Google account will be matched against
+          AICAIML's approved membership records. No passwords are stored or managed
+          by AICAIML for member sign-in.
+        </div>
+
+        <div className="mt-4 text-center text-xs text-slate-500">
+          Not yet a member?{' '}
+          <button
+            type="button"
+            onClick={handleRegisterNow}
+            className="text-accent-sky hover:text-corp-blue font-semibold underline"
+          >
+            Register Now
+          </button>
+        </div>
+
+        <div className="mt-2 text-center">
+          <Button variant="ghost" size="sm" onClick={async () => { await logout(); setCurrentPage('home'); }}>
+            Back to Home
           </Button>
-        </form>
+        </div>
       </div>
     </div>
   );

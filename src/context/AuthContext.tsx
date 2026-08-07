@@ -18,6 +18,7 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   memberLogin: (identifier: string, password: string) => Promise<{ success: boolean; error?: string; code?: string; status?: string }>;
+  memberGoogleLogin: (idToken: string) => Promise<{ success: boolean; error?: string; notApproved?: boolean; status?: string }>;
   logout: () => Promise<void>;
   hasPremiumAccess: boolean;
 }
@@ -85,10 +86,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const memberGoogleLogin = async (idToken: string) => {
+    try {
+      const data = await apiRequest<{ user: any; notApproved?: boolean; status?: string }>(
+        '/api/auth/member/google',
+        {
+          method: 'POST',
+          body: JSON.stringify({ idToken })
+        }
+      );
+
+      setUser(data.user);
+      return { success: true };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message || 'Unable to reach the server. Please try again.',
+        notApproved: err.body?.notApproved ?? false,
+        status: err.body?.status
+      };
+    }
+  };
+
   const hasPremiumAccess = !!user && (user.role === 'admin' || user.membershipStatus === 'active');
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, memberLogin, logout, hasPremiumAccess }}>
+    <AuthContext.Provider value={{ user, loading, login, memberLogin, memberGoogleLogin, logout, hasPremiumAccess }}>
       {children}
     </AuthContext.Provider>
   );
