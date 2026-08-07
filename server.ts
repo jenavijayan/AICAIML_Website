@@ -608,6 +608,141 @@ export async function startServer() {
     }
   });
 
+  // API Route - Google Sign-In member login (Google ID token verification)
+  app.post('/api/auth/member/google', async (req, res) => {
+    try {
+      if (!supabase) {
+        return res.status(500).json({ error: 'Supabase is not configured on this deployment.' });
+      }
+
+      const { idToken } = req.body || {};
+      if (!idToken || typeof idToken !== 'string') {
+        return res.status(400).json({ error: 'Google ID token is required.' });
+      }
+
+      const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+      if (!GOOGLE_CLIENT_ID) {
+        return res.status(500).json({ error: 'Google Client ID is not configured on the server.' });
+      }
+
+      let googleUser: { email: string; name: string; picture?: string; sub?: string };
+      try {
+        const tokenInfoRes = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+        if (!tokenInfoRes.ok) {
+          return res.status(401).json({ error: 'Google authentication failed.' });
+        }
+        const tokenInfo = await tokenInfoRes.json() as any;
+
+        if (tokenInfo.aud !== GOOGLE_CLIENT_ID) {
+          return res.status(401).json({ error: 'Google ID token was not issued for this application.' });
+        }
+
+        if (tokenInfo.exp && Number(tokenInfo.exp) < Math.floor(Date.now() / 1000)) {
+          return res.status(401).json({ error: 'Google ID token has expired.' });
+        }
+
+        googleUser = {
+          email: String(tokenInfo.email || '').toLowerCase().trim(),
+          name: tokenInfo.name || tokenInfo.email || '',
+          picture: tokenInfo.picture,
+          sub: tokenInfo.sub
+        };
+      } catch (verifyErr) {
+        console.error('Google token verification error:', verifyErr);
+        return res.status(401).json({ error: 'Google authentication failed.' });
+      }
+
+      const normalizedEmail = googleUser.email.trim().toLowerCase();
+      const userQuery = await supabase.from('users').select('*').eq('email', normalizedEmail).maybeSingle();
+
+      if (userQuery.error && userQuery.error.code !== 'PGRST116') {
+        return res.status(500).json({ error: userQuery.error.message });
+      }
+
+      const userRow = userQuery.data;
+
+      if (!userRow) {
+        const applicationQuery = await supabase
+          .from('applications')
+          .select('status')
+          .eq('email', normalizedEmail)
+          .order('submitted_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!applicationQuery.error && applicationQuery.data) {
+          const status = String(applicationQuery.data.status || '').toLowerCase();
+          if (status === 'pending') {
+            return res.status(403).json({
+              error: 'Your application is still pending review. You can sign in after approval.',
+              status: 'pending',
+              notApproved: true
+            });
+          }
+          if (status === 'rejected') {
+            return res.status(403).json({
+              error: 'Your previous application was rejected. Please submit a new application to continue.',
+              status: 'rejected',
+              notApproved: true
+            });
+          }
+        }
+
+        return res.status(403).json({
+          error: 'We couldn\'t find an approved membership for this Google account.',
+          notApproved: true
+        });
+      }
+
+      if (String(userRow.role || '').toLowerCase() !== 'member') {
+        return res.status(403).json({
+          error: 'This account is not a member account.',
+          notApproved: true
+        });
+      }
+
+      const membershipStatus = String(userRow.membership_status || '').toLowerCase();
+      if (membershipStatus && membershipStatus !== 'active') {
+        return res.status(403).json({
+          error: 'We couldn\'t find an approved membership for this Google account.',
+          status: membershipStatus,
+          notApproved: true
+        });
+      }
+
+      if (userRow.must_reset_password) {
+        return res.status(403).json({
+          error: 'Password setup is required before first sign-in. Please use the link sent to your email.',
+          code: 'PASSWORD_SETUP_REQUIRED',
+          notApproved: true
+        });
+      }
+
+      const { token, expiresAt } = await createSession(userRow.id);
+      setSessionCookie(res, token, expiresAt);
+
+      console.log('[auth.member.google]', JSON.stringify({
+        timestamp: new Date().toISOString(),
+        endpoint: '/api/auth/member/google',
+        event: 'login_success',
+        emailHint: `${normalizedEmail.split('@')[0].slice(0, 2)}***@${normalizedEmail.split('@')[1]}`,
+        memberId: userRow.membership_no || null,
+        userId: userRow.id || null
+      }));
+
+      return res.json({
+        success: true,
+        user: toPublicUserFromRow({
+          ...userRow,
+          name: userRow.name || googleUser.name
+        })
+      });
+    } catch (err: any) {
+      console.error('Member Google login error:', err);
+      return res.status(500).json({ error: err.message || 'Unable to process member login.' });
+    }
+  });
+
   app.post('/api/auth/member/set-password', async (req, res) => {
     try {
       const token = String(req.body?.token || '').trim();
