@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+import https from 'https';
 import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
 import {
   SESSION_COOKIE,
@@ -57,16 +59,23 @@ async function verifyGoogleIdToken(idToken) {
 
   try {
     const tokenInfoUrl = `https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
-    const res = await fetch(tokenInfoUrl, {
-      method: 'GET',
-      headers: { Accept: 'application/json' }
+    const tokenInfo = await new Promise((resolve, reject) => {
+      https.get(tokenInfoUrl, { headers: { Accept: 'application/json' } }, (response) => {
+        let data = '';
+        response.on('data', (chunk) => { data += chunk; });
+        response.on('end', () => {
+          try {
+            if (response.statusCode && response.statusCode >= 200 && response.statusCode < 300) {
+              resolve(JSON.parse(data));
+            } else {
+              reject(new Error(`Google token verification failed (${response.statusCode})`));
+            }
+          } catch (err) {
+            reject(new Error(`Google token verification failed: ${err.message}`));
+          }
+        });
+      }).on('error', reject);
     });
-
-    if (!res.ok) {
-      throw new Error(`Google token verification failed (${res.status})`);
-    }
-
-    const tokenInfo = await res.json();
 
     if (tokenInfo.aud !== GOOGLE_CLIENT_ID) {
       throw new Error('Google ID token was not issued for this application.');

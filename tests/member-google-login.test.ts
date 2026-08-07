@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import https from 'node:https';
 
 process.env.GOOGLE_CLIENT_ID = 'test-client-id';
 process.env.VITE_GOOGLE_CLIENT_ID = 'test-client-id';
@@ -8,26 +9,28 @@ const state: {
   userError: any;
   application: any | null;
   applicationError: any;
-  fetchGoogle: any;
+  googleTokenInfo: any;
+  googleTokenError: boolean;
 } = {
   userRow: null,
   userError: null,
   application: null,
   applicationError: null,
-  fetchGoogle: null
+  googleTokenInfo: null,
+  googleTokenError: false
 };
 
 const mockCreateSession = vi.fn();
 const mockToPublicUser = (row: any) => ({
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    role: row.role,
-    membershipPlan: row.membership_plan,
-    membershipNo: row.membership_no || null,
-    membershipStatus: row.membership_status,
-    mustResetPassword: Boolean(row.must_reset_password),
-    permissions: Array.isArray(row.permissions) ? row.permissions : []
+  id: row.id,
+  name: row.name,
+  email: row.email,
+  role: row.role,
+  membershipPlan: row.membership_plan,
+  membershipNo: row.membership_no || null,
+  membershipStatus: row.membership_status,
+  mustResetPassword: Boolean(row.must_reset_password),
+  permissions: Array.isArray(row.permissions) ? row.permissions : []
 });
 
 vi.mock('../server-lib/supabaseClient.js', () => ({
@@ -76,6 +79,27 @@ vi.mock('../server-lib/authFallback.js', () => ({
   toPublicUser: mockToPublicUser
 }));
 
+vi.mock('node:https', () => ({
+  default: {
+    get: vi.fn()
+  }
+}));
+
+function mockHttpsResponse(statusCode: number, body: any) {
+  const dataStr = JSON.stringify(body);
+  const mockRes = {
+    statusCode,
+    on(event: string, cb: (chunk?: string) => void) {
+      if (event === 'data') {
+        cb(dataStr);
+      } else if (event === 'end') {
+        cb();
+      }
+    }
+  };
+  return mockRes;
+}
+
 function createMockRes() {
   const res: any = {
     statusCode: 200,
@@ -102,18 +126,25 @@ describe('member Google login route', () => {
     state.userError = null;
     state.application = null;
     state.applicationError = null;
-    state.fetchGoogle = null;
+    state.googleTokenInfo = null;
+    state.googleTokenError = false;
     mockCreateSession.mockReset();
   });
 
-  vi.stubGlobal('fetch', async (url: string) => {
-    if (state.fetchGoogle) return state.fetchGoogle(url);
-    return {
-      ok: false,
-      status: 400,
-      json: async () => ({ error: 'invalid_token' })
-    };
-  });  it('returns 400 when idToken is missing', async () => {
+  beforeEach(() => {
+    const mockedHttps = vi.mocked(https.get as any);
+    mockedHttps.mockImplementation((url: string, opts: any, cb: (res: any) => void) => {
+      const callback = typeof opts === 'function' ? opts : cb;
+      if (state.googleTokenError) {
+        callback(mockHttpsResponse(400, { error: 'invalid_token' }));
+      } else {
+        callback(mockHttpsResponse(200, state.googleTokenInfo));
+      }
+      return { on: () => {} } as any;
+    });
+  });
+
+  it('returns 400 when idToken is missing', async () => {
     const { default: handler } = await import('../server-lib/api-routes/auth/member-google.js');
     const req: any = { method: 'POST', body: {} };
     const res = createMockRes();
@@ -124,7 +155,7 @@ describe('member Google login route', () => {
   });
 
   it('returns 401 when Google token verification fails', async () => {
-    state.fetchGoogle = async () => ({ ok: false, status: 400, json: async () => ({ error: 'invalid_token' }) });
+    state.googleTokenError = true;
 
     const { default: handler } = await import('../server-lib/api-routes/auth/member-google.js');
     const req: any = { method: 'POST', body: { idToken: 'bad-token' } };
@@ -136,14 +167,11 @@ describe('member Google login route', () => {
   });
 
   it('returns 401 when token audience does not match', async () => {
-    state.fetchGoogle = async () => ({
-      ok: true,
-      json: async () => ({
-        aud: 'wrong-client-id',
-        email: 'member@example.com',
-        name: 'Test User'
-      })
-    });
+    state.googleTokenInfo = {
+      aud: 'wrong-client-id',
+      email: 'member@example.com',
+      name: 'Test User'
+    };
 
     const { default: handler } = await import('../server-lib/api-routes/auth/member-google.js');
     const req: any = { method: 'POST', body: { idToken: 'fake-id-token' } };
@@ -155,15 +183,12 @@ describe('member Google login route', () => {
   });
 
   it('returns 403 with notApproved when email not found and no application exists', async () => {
-    state.fetchGoogle = async () => ({
-      ok: true,
-      json: async () => ({
-        aud: 'test-client-id',
-        email: 'unknown@example.com',
-        name: 'Unknown User',
-        exp: Math.floor(Date.now() / 1000) + 3600
-      })
-    });
+    state.googleTokenInfo = {
+      aud: 'test-client-id',
+      email: 'unknown@example.com',
+      name: 'Unknown User',
+      exp: Math.floor(Date.now() / 1000) + 3600
+    };
     state.userError = { code: 'PGRST116' };
     state.applicationError = { code: 'PGRST116' };
 
@@ -178,15 +203,12 @@ describe('member Google login route', () => {
   });
 
   it('returns 403 pending when application status is pending', async () => {
-    state.fetchGoogle = async () => ({
-      ok: true,
-      json: async () => ({
-        aud: 'test-client-id',
-        email: 'pending@example.com',
-        name: 'Pending User',
-        exp: Math.floor(Date.now() / 1000) + 3600
-      })
-    });
+    state.googleTokenInfo = {
+      aud: 'test-client-id',
+      email: 'pending@example.com',
+      name: 'Pending User',
+      exp: Math.floor(Date.now() / 1000) + 3600
+    };
     state.userError = { code: 'PGRST116' };
     state.application = { status: 'Pending' };
 
@@ -202,15 +224,12 @@ describe('member Google login route', () => {
   });
 
   it('returns 403 rejected when application status is rejected', async () => {
-    state.fetchGoogle = async () => ({
-      ok: true,
-      json: async () => ({
-        aud: 'test-client-id',
-        email: 'rejected@example.com',
-        name: 'Rejected User',
-        exp: Math.floor(Date.now() / 1000) + 3600
-      })
-    });
+    state.googleTokenInfo = {
+      aud: 'test-client-id',
+      email: 'rejected@example.com',
+      name: 'Rejected User',
+      exp: Math.floor(Date.now() / 1000) + 3600
+    };
     state.userError = { code: 'PGRST116' };
     state.application = { status: 'Rejected' };
 
@@ -225,15 +244,12 @@ describe('member Google login route', () => {
   });
 
   it('returns 403 when user role is not member', async () => {
-    state.fetchGoogle = async () => ({
-      ok: true,
-      json: async () => ({
-        aud: 'test-client-id',
-        email: 'admin@example.com',
-        name: 'Admin User',
-        exp: Math.floor(Date.now() / 1000) + 3600
-      })
-    });
+    state.googleTokenInfo = {
+      aud: 'test-client-id',
+      email: 'admin@example.com',
+      name: 'Admin User',
+      exp: Math.floor(Date.now() / 1000) + 3600
+    };
     state.userRow = {
       id: 'u-admin',
       email: 'admin@example.com',
@@ -256,15 +272,12 @@ describe('member Google login route', () => {
   });
 
   it('returns 403 when membership status is not active', async () => {
-    state.fetchGoogle = async () => ({
-      ok: true,
-      json: async () => ({
-        aud: 'test-client-id',
-        email: 'inactive@example.com',
-        name: 'Inactive User',
-        exp: Math.floor(Date.now() / 1000) + 3600
-      })
-    });
+    state.googleTokenInfo = {
+      aud: 'test-client-id',
+      email: 'inactive@example.com',
+      name: 'Inactive User',
+      exp: Math.floor(Date.now() / 1000) + 3600
+    };
     state.userRow = {
       id: 'u-inactive',
       email: 'inactive@example.com',
@@ -288,15 +301,12 @@ describe('member Google login route', () => {
   });
 
   it('succeeds for an approved active member', async () => {
-    state.fetchGoogle = async () => ({
-      ok: true,
-      json: async () => ({
-        aud: 'test-client-id',
-        email: 'approved@example.com',
-        name: 'Approved User',
-        exp: Math.floor(Date.now() / 1000) + 3600
-      })
-    });
+    state.googleTokenInfo = {
+      aud: 'test-client-id',
+      email: 'approved@example.com',
+      name: 'Approved User',
+      exp: Math.floor(Date.now() / 1000) + 3600
+    };
     state.userRow = {
       id: 'u-approved',
       email: 'approved@example.com',

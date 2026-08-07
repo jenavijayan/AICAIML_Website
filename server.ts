@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import https from 'node:https';
 import net from 'node:net';
 import multer from 'multer';
 import nodemailer from 'nodemailer';
@@ -627,11 +628,24 @@ export async function startServer() {
 
       let googleUser: { email: string; name: string; picture?: string; sub?: string };
       try {
-        const tokenInfoRes = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
-        if (!tokenInfoRes.ok) {
-          return res.status(401).json({ error: 'Google authentication failed.' });
-        }
-        const tokenInfo = await tokenInfoRes.json() as any;
+        const tokenInfoUrl = `https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+        const tokenInfo = await new Promise<any>((resolve, reject) => {
+          https.get(tokenInfoUrl, { headers: { Accept: 'application/json' } }, (tokenInfoRes) => {
+            let data = '';
+            tokenInfoRes.on('data', (chunk) => { data += chunk; });
+            tokenInfoRes.on('end', () => {
+              try {
+                if (tokenInfoRes.statusCode && tokenInfoRes.statusCode >= 200 && tokenInfoRes.statusCode < 300) {
+                  resolve(JSON.parse(data));
+                } else {
+                  reject(new Error(`Google token verification failed (${tokenInfoRes.statusCode})`));
+                }
+              } catch (err) {
+                reject(err);
+              }
+            });
+          }).on('error', reject);
+        });
 
         if (tokenInfo.aud !== GOOGLE_CLIENT_ID) {
           return res.status(401).json({ error: 'Google ID token was not issued for this application.' });
