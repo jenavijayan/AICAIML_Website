@@ -224,7 +224,7 @@ export default function AdminDashboard() {
         setActionMessage(`Application ${app.id} approved.`);
       }
       setActionMessageIsError(false);
-      await loadApplications();
+      await Promise.all([loadApplications(), loadOverview(), loadMembers()]);
       setTimeout(() => setActionMessage(null), 5000);
     } catch (err: any) {
       setActionMessage(err.message || 'Approval failed. Please try again.');
@@ -233,7 +233,7 @@ export default function AdminDashboard() {
     } finally {
       setAppActionLoading(null);
     }
-  }, [loadApplications]);
+  }, [loadApplications, loadOverview, loadMembers]);
 
   const handleReject = useCallback(async (app: AppRow, reason?: string) => {
     setAppActionLoading(app.id);
@@ -241,7 +241,7 @@ export default function AdminDashboard() {
       await postJson(`/api/admin/applications/${app.id}/reject`, { reason: reason || '' });
       setActionMessage(`Application ${app.id} rejected.`);
       setActionMessageIsError(false);
-      await loadApplications();
+      await Promise.all([loadApplications(), loadOverview(), loadMembers()]);
       setTimeout(() => setActionMessage(null), 3000);
     } catch (err: any) {
       setActionMessage(err.message || 'Rejection failed. Please try again.');
@@ -250,7 +250,7 @@ export default function AdminDashboard() {
     } finally {
       setAppActionLoading(null);
     }
-  }, [loadApplications]);
+  }, [loadApplications, loadOverview, loadMembers]);
 
   const safeApps = asArray<AppRow>(apps);
   const safeMembers = asArray<any>(members);

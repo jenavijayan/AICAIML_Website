@@ -466,36 +466,6 @@ export default function Home({
         </div>
       </section>
 
-      {/* SECTION 3: DIGITAL ECOSYSTEM (Icon Grid) */}
-      <section className="py-16 bg-pale-blue/50 border-y border-corp-blue/15">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-2xl mx-auto mb-16">
-            <h2 className="text-3xl font-bold text-navy font-heading">The AICAIML Online Learning Ecosystem</h2>
-            <p className="text-slate-600 text-sm mt-2">Everything a student, individual, or institution needs to learn, certify, and stay connected — all online.</p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {[
-              { icon: BookOpen, title: 'Course Library', desc: 'Self-paced courses in AI, Machine Learning, and Robotics — free foundational tracks plus advanced member-only courses.' },
-              { icon: Award, title: 'Certification Registry', desc: 'Every course completion is backed by a verifiable digital certificate with a unique lookup code.' },
-              { icon: Cpu, title: 'Practical Sandboxes', desc: 'Hands-on simulation and lab access so learners apply what they study in real project settings.' },
-              { icon: Network, title: 'Network Forum', desc: 'Connects students, individual professionals, MSMEs, and academic researchers for knowledge sharing and mentorship.' },
-              { icon: Users, title: 'Campus & Community Chapters', desc: 'State and district chapters supporting local student groups, coordinators, and institutional partners.' },
-              { icon: Brain, title: 'Responsible AI Framework', desc: 'Course content and research guided by clear standards on model interpretability, bias evaluation, and ethical deployment.' }
-            ].map((eco, idx) => {
-              const IconComp = eco.icon;
-              return (
-                <Card key={idx} interactive>
-                  <IconBadge icon={IconComp} />
-                  <h3 className="text-navy font-bold text-lg font-heading mb-2">{eco.title}</h3>
-                  <p className="text-slate-600 text-sm leading-relaxed">{eco.desc}</p>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
       {/* SECTION 4: OUR PROJECTS (CMS Card Grid) */}
       <section className="py-16 md:py-24 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
