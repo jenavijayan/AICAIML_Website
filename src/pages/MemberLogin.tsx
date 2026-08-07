@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ShieldCheck, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
@@ -85,6 +85,8 @@ export default function MemberLogin({ setCurrentPage, redirectAfterLogin }: Memb
   const gisInitialized = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
+  const [memberName, setMemberName] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,7 +155,8 @@ export default function MemberLogin({ setCurrentPage, redirectAfterLogin }: Memb
         setError(result.error || 'Unable to complete sign-in. Please try again.');
         return;
       }
-      setCurrentPage(redirectAfterLogin || 'member-welcome');
+      setMemberName(result.user?.name || result.user?.email || 'Member');
+      setSignedIn(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
       setError('Unable to reach the server. Please try again.');
@@ -162,10 +165,39 @@ export default function MemberLogin({ setCurrentPage, redirectAfterLogin }: Memb
     }
   };
 
+  const handleGoToDashboard = () => {
+    setCurrentPage(redirectAfterLogin || 'member-dashboard');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleRegisterNow = () => {
     setCurrentPage('membership');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  if (signedIn) {
+    return (
+      <div className="min-h-[72vh] bg-slate-50 px-4 py-12 flex items-center justify-center">
+        <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-lg p-8 text-center space-y-6">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+            <ShieldCheck className="w-8 h-6" />
+          </div>
+          <h1 className="text-3xl font-heading font-bold text-navy">Welcome, {memberName}!</h1>
+          <p className="text-slate-600">Your membership has been approved.</p>
+          <p className="text-sm text-slate-500">You now have access to the AICAIML member portal.</p>
+          <div className="pt-4 flex flex-col sm:flex-row gap-3 justify-center">
+            <Button onClick={handleGoToDashboard} className="flex items-center gap-2">
+              Go to Dashboard
+            </Button>
+            <Button variant="outline" onClick={async () => { await logout(); setCurrentPage('home'); }} className="flex items-center gap-2">
+              <LogOut className="w-4 h-4" />
+              Sign Out
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[72vh] bg-slate-50 px-4 py-12 flex items-center justify-center">

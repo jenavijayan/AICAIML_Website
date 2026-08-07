@@ -110,7 +110,7 @@ export default function MemberWelcome({ setCurrentPage }: MemberWelcomeProps) {
 
             <Card className="p-6 bg-slate-50 border border-slate-200">
               <p className="text-sm text-slate-600 leading-relaxed">
-                Your membership has been successfully approved. Welcome to the AICAIML community. More member features will be available soon.
+                Your membership has been approved. Welcome to AICAIML!
               </p>
             </Card>
 

@@ -219,11 +219,13 @@ describe('admin approve route compatibility', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.payload?.success).toBe(true);
-    expect(res.payload?.credentials?.deliveryMode).toBe('temporary_password');
+    expect(res.payload?.credentials?.deliveryMode).toBe('google_signin');
+    expect(res.payload?.credentials?.memberId).toBeDefined();
+    expect(res.payload?.credentials?.temporaryPasswordIssued).toBeUndefined();
     expect(state.applicationsUpdateCalls.length).toBeGreaterThan(0);
 
     const hadFallbackPasswordHashWrite = state.usersUpdateCalls.some((call) => Object.prototype.hasOwnProperty.call(call.payload, 'password_hash'));
-    expect(hadFallbackPasswordHashWrite).toBe(true);
+    expect(hadFallbackPasswordHashWrite).toBe(false);
   });
 
   it('rolls back created member user when application update fails', async () => {

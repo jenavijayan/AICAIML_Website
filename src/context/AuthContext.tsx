@@ -18,7 +18,7 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   memberLogin: (identifier: string, password: string) => Promise<{ success: boolean; error?: string; code?: string; status?: string }>;
-  memberGoogleLogin: (idToken: string) => Promise<{ success: boolean; error?: string; notApproved?: boolean; status?: string }>;
+  memberGoogleLogin: (idToken: string) => Promise<{ success: boolean; error?: string; notApproved?: boolean; status?: string; user?: AuthUser }>;
   logout: () => Promise<void>;
   hasPremiumAccess: boolean;
 }
@@ -88,16 +88,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const memberGoogleLogin = async (idToken: string) => {
     try {
-      const data = await apiRequest<{ user: any; notApproved?: boolean; status?: string }>(
-        '/api/auth/member/google',
-        {
-          method: 'POST',
-          body: JSON.stringify({ idToken })
-        }
-      );
+       const data = await apiRequest<{ user: any; notApproved?: boolean; status?: string }>(
+         '/api/auth/member/google',
+         {
+           method: 'POST',
+           body: JSON.stringify({ idToken })
+         }
+       );
 
       setUser(data.user);
-      return { success: true };
+      return { success: true, user: data.user };
     } catch (err: any) {
       return {
         success: false,

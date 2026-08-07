@@ -390,29 +390,24 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
   logStep?.('query.users.by_email.result', { found: Boolean(existingUser), selectedUserId: existingUser?.id || null });
 
   if (!existingUser) {
-    const tempPassword = crypto.randomBytes(24).toString('base64url');
-    const { hash, salt } = hashPassword(tempPassword);
     const now = new Date().toISOString();
     const newUserId = 'mem-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     logStep?.('query.users.insert.start', { email, generatedUserId: newUserId });
     let createRes = await insertRowCompat(
       'users',
       {
-      id: newUserId,
-      name,
-      email,
-      password_hash: hash,
-      password_salt: salt,
-      role: 'member',
-      membership_no: membershipId,
-      membership_plan: null,
-      membership_status: 'active',
-      must_reset_password: true,
-      permissions: '[]',
-      created_at: now,
-      updated_at: now
+        id: newUserId,
+        name,
+        email,
+        role: 'member',
+        membership_no: membershipId,
+        membership_plan: null,
+        membership_status: 'active',
+        permissions: '[]',
+        created_at: now,
+        updated_at: now
       },
-      ['membership_no', 'membership_plan', 'must_reset_password', 'updated_at'],
+      ['membership_no', 'membership_plan', 'updated_at'],
       logStep
     );
 
@@ -421,16 +416,14 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
       createRes = await insertRowCompat(
         'users',
         {
-        id: newUserId,
-        name,
-        email,
-        password_hash: hash,
-        password_salt: salt,
-        role: 'member',
-        membership_no: membershipId,
-        membership_status: 'active',
-        permissions: '[]',
-        created_at: now
+          id: newUserId,
+          name,
+          email,
+          role: 'member',
+          membership_no: membershipId,
+          membership_status: 'active',
+          permissions: '[]',
+          created_at: now
         },
         ['membership_no'],
         logStep
@@ -473,33 +466,21 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
       membership_no: existingUser.membership_no,
       membership_status: existingUser.membership_status,
       name: existingUser.name,
-      password_hash: existingUser.password_hash,
-      password_salt: existingUser.password_salt,
-      must_reset_password: existingUser.must_reset_password,
       updated_at: existingUser.updated_at
     };
-
-    let resetSeed = null;
-    if (!existingUser.password_hash || !existingUser.password_salt) {
-      const tempPassword = crypto.randomBytes(24).toString('base64url');
-      resetSeed = hashPassword(tempPassword);
-    }
 
     logStep?.('query.users.update_existing.start', { userId: existingUser.id });
     let updateRes = await updateRowCompatById(
       'users',
       existingUser.id,
       {
-      role: 'member',
-      membership_no: existingUser.membership_no || membershipId,
-      membership_status: 'active',
-      name: existingUser.name || name,
-      password_hash: resetSeed ? resetSeed.hash : existingUser.password_hash,
-      password_salt: resetSeed ? resetSeed.salt : existingUser.password_salt,
-      must_reset_password: true,
-      updated_at: new Date().toISOString()
+        role: 'member',
+        membership_no: existingUser.membership_no || membershipId,
+        membership_status: 'active',
+        name: existingUser.name || name,
+        updated_at: new Date().toISOString()
       },
-      ['membership_no', 'must_reset_password', 'updated_at'],
+      ['membership_no', 'updated_at'],
       logStep
     );
 
@@ -508,15 +489,12 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
         'users',
         existingUser.id,
         {
-        role: 'member',
-        membership_no: existingUser.membership_no || membershipId,
-        membership_status: 'active',
-        name: existingUser.name || name,
-        password_hash: resetSeed ? resetSeed.hash : existingUser.password_hash,
-        password_salt: resetSeed ? resetSeed.salt : existingUser.password_salt,
-        must_reset_password: true
+          role: 'member',
+          membership_no: existingUser.membership_no || membershipId,
+          membership_status: 'active',
+          name: existingUser.name || name
         },
-        ['membership_no', 'must_reset_password'],
+        ['membership_no'],
         logStep
       );
     }
@@ -551,13 +529,10 @@ async function rollbackMemberUserMutation(mutation, logStep) {
     membership_no: mutation.previousUser.membership_no,
     membership_status: mutation.previousUser.membership_status,
     name: mutation.previousUser.name,
-    password_hash: mutation.previousUser.password_hash,
-    password_salt: mutation.previousUser.password_salt,
-    must_reset_password: mutation.previousUser.must_reset_password,
     updated_at: mutation.previousUser.updated_at || new Date().toISOString()
   };
 
-  const restore = await updateRowCompatById('users', mutation.userId, restorePayload, ['membership_no', 'must_reset_password', 'updated_at'], logStep);
+  const restore = await updateRowCompatById('users', mutation.userId, restorePayload, ['membership_no', 'updated_at'], logStep);
   if (restore.error) {
     logStep?.('query.users.rollback_restore.error', { userId: mutation.userId, error: serializeError(restore.error) });
   } else {
@@ -566,55 +541,8 @@ async function rollbackMemberUserMutation(mutation, logStep) {
 }
 
 async function issuePasswordSetupToken(userId, logStep) {
-  const rawToken = crypto.randomBytes(32).toString('base64url');
-  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-
-  const tokenPayload = {
-    password_reset_token: tokenHash,
-    password_reset_expires_at: expiresAt,
-    must_reset_password: true,
-    updated_at: new Date().toISOString()
-  };
-
-  const tokenUpdate = await updateRowCompatById(
-    'users',
-    userId,
-    tokenPayload,
-    ['password_reset_token', 'password_reset_expires_at', 'must_reset_password', 'updated_at'],
-    logStep
-  );
-
-  if (tokenUpdate.error) {
-    failIfSupabaseError(tokenUpdate, 'Failed to create password setup token');
-  }
-
-  const tokenColumnsPersisted =
-    Object.prototype.hasOwnProperty.call(tokenUpdate.appliedPayload, 'password_reset_token') &&
-    Object.prototype.hasOwnProperty.call(tokenUpdate.appliedPayload, 'password_reset_expires_at');
-
-  if (tokenColumnsPersisted) {
-    logStep?.('workflow.password_setup.mode', { mode: 'setup_link', expiresAt });
-    return { mode: 'setup_link', rawToken, expiresAt };
-  }
-
-  const tempPassword = crypto.randomBytes(18).toString('base64url');
-  const { hash, salt } = hashPassword(tempPassword);
-  const passwordFallback = await updateRowCompatById(
-    'users',
-    userId,
-    {
-      password_hash: hash,
-      password_salt: salt,
-      must_reset_password: true,
-      updated_at: new Date().toISOString()
-    },
-    ['must_reset_password', 'updated_at'],
-    logStep
-  );
-  failIfSupabaseError(passwordFallback, 'Failed to provision temporary password fallback');
-  logStep?.('workflow.password_setup.mode', { mode: 'temporary_password' });
-  return { mode: 'temporary_password', tempPassword, expiresAt: null };
+  logStep?.('workflow.password_setup.mode', { mode: 'google_signin', userId });
+  return { mode: 'google_signin', rawToken: null, expiresAt: null };
 }
 
 async function handleOverview(req, res) {
@@ -781,17 +709,8 @@ async function handleApproveApplication(req, res, id) {
     }
 
     const baseUrl = resolvePublicBaseUrl(req, logStep);
-    const setPasswordLink = setup.mode === 'setup_link'
-      ? `${baseUrl}/#set-password?token=${encodeURIComponent(setup.rawToken)}`
-      : null;
     const membershipType = String(application.category || application.membership_category || 'member').toUpperCase();
-    let emailBody = `Dear ${name},\n\nCongratulations! Your application for AICAIML ${membershipType} membership has been reviewed and approved by the Membership Board.\n\nAPPROVAL DETAILS:\n - Membership ID: ${memberId}\n - Application ID: ${application.id}\n - Membership Type: ${membershipType}\n - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\n`;
-
-    if (setup.mode === 'setup_link') {
-      emailBody += `SECURE ACCOUNT SETUP:\n 1. Set your member portal password using the secure link below:\n ${setPasswordLink}\n 2. This link expires in 48 hours for your account security.\n 3. After setting the password, sign in at: ${baseUrl}/#member-login\n\nPlease keep your credentials private and do not share them.`;
-    } else {
-      emailBody += `LOGIN CREDENTIALS (LEGACY SETUP MODE):\n - Username: ${email}\n - Temporary Password: ${setup.tempPassword}\n\nPlease sign in at ${baseUrl}/#member-login and change your password immediately after first login.`;
-    }
+    let emailBody = `Dear ${name},\n\nCongratulations! Your application for AICAIML ${membershipType} membership has been reviewed and approved by the Membership Board.\n\nAPPROVAL DETAILS:\n - Membership ID: ${memberId}\n - Application ID: ${application.id}\n - Membership Type: ${membershipType}\n - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}]\n\nYour membership is now active. To access the member portal, sign in using your approved Google account at: ${baseUrl}/#member-login\n\nNo password is required — member sign-in uses Google Sign-In only.`;
 
     emailBody += `\n\nWelcome to India's premier AI/ML advancements ecosystem!\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
 
@@ -816,9 +735,7 @@ async function handleApproveApplication(req, res, id) {
       application: { ...application, status: 'Approved', approval_date: approvalDate, member_id: memberId },
       credentials: {
         memberId,
-        setupLinkSent: setup.mode === 'setup_link',
-        deliveryMode: setup.mode,
-        temporaryPasswordIssued: setup.mode === 'temporary_password'
+        deliveryMode: setup.mode
       },
       traceId
     });

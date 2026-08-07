@@ -33,12 +33,8 @@ export default function MemberAccessDenied({ setCurrentPage, message }: MemberAc
         <div className="space-y-2">
           <h1 className="text-2xl font-heading font-bold text-navy">Access Denied</h1>
           <p className="text-sm text-slate-600">
-            {message || 'We couldn\'t find an approved membership for this Google account.'}
+            {message || 'Your membership is not yet approved. Please register or wait for admin approval.'}
           </p>
-        </div>
-
-        <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 text-sm text-rose-700">
-          Please register for membership or wait for your application to be approved.
         </div>
 
         <div className="flex flex-col gap-3 pt-2">
