@@ -53,83 +53,83 @@ export default async function handler(req, res) {
 	const method = req.method || 'GET';
 	const path = resolvePath(req);
 
-	if (method === 'GET' && (path === '/health' || path === '/api/health' || path.endsWith('/health'))) {
+	if (method === 'GET' && (path === '/health' || path === '/api/health')) {
 		return healthHandler(req, res);
 	}
 
-	if (method === 'POST' && (path === '/auth/login' || path === '/api/auth/login' || path.endsWith('/auth/login'))) {
+	if (method === 'POST' && (path === '/auth/login' || path === '/api/auth/login')) {
 		return authLoginHandler(req, res);
 	}
-	if (method === 'POST' && (path === '/auth/logout' || path === '/api/auth/logout' || path.endsWith('/auth/logout'))) {
+	if (method === 'POST' && (path === '/auth/logout' || path === '/api/auth/logout')) {
 		return authLogoutHandler(req, res);
 	}
-	if (method === 'GET' && (path === '/auth/me' || path === '/api/auth/me' || path.endsWith('/auth/me'))) {
+	if (method === 'GET' && (path === '/auth/me' || path === '/api/auth/me')) {
 		return authMeHandler(req, res);
 	}
-	if (method === 'POST' && (path === '/auth/member/login' || path === '/api/auth/member/login' || path.endsWith('/auth/member/login'))) {
+	if (method === 'POST' && (path === '/auth/member/login' || path === '/api/auth/member/login')) {
 		return memberLoginHandler(req, res);
 	}
-	if (method === 'POST' && (path === '/auth/member/set-password' || path === '/api/auth/member/set-password' || path.endsWith('/auth/member/set-password'))) {
+	if (method === 'POST' && (path === '/auth/member/set-password' || path === '/api/auth/member/set-password')) {
 		return memberSetPasswordHandler(req, res);
 	}
-	if (method === 'GET' && (path === '/auth/member/dashboard' || path === '/api/auth/member/dashboard' || path.endsWith('/auth/member/dashboard'))) {
+	if (method === 'GET' && (path === '/auth/member/dashboard' || path === '/api/auth/member/dashboard')) {
 		return memberDashboardHandler(req, res);
 	}
 
-	if (method === 'GET' && (path === '/courses' || path === '/api/courses' || path.endsWith('/courses'))) {
+	if (method === 'GET' && (path === '/courses' || path === '/api/courses')) {
 		return coursesHandler(req, res);
 	}
-	if (method === 'GET' && (path === '/projects' || path === '/api/projects' || path.endsWith('/projects'))) {
+	if (method === 'GET' && (path === '/projects' || path === '/api/projects')) {
 		return projectsHandler(req, res);
 	}
-	if (method === 'GET' && (path === '/events' || path === '/api/events' || path.endsWith('/events'))) {
+	if (method === 'GET' && (path === '/events' || path === '/api/events')) {
 		return eventsHandler(req, res);
 	}
-	if (method === 'POST' && (path === '/events/register' || path === '/api/events/register' || path.endsWith('/events/register'))) {
+	if (method === 'POST' && (path === '/events/register' || path === '/api/events/register')) {
 		return eventsRegisterHandler(req, res);
 	}
-	if (method === 'GET' && (path === '/partners' || path === '/api/partners' || path.endsWith('/partners'))) {
+	if (method === 'GET' && (path === '/partners' || path === '/api/partners')) {
 		return partnersHandler(req, res);
 	}
-	if (method === 'GET' && (path === '/testimonials' || path === '/api/testimonials' || path.endsWith('/testimonials'))) {
+	if (method === 'GET' && (path === '/testimonials' || path === '/api/testimonials')) {
 		return testimonialsHandler(req, res);
 	}
-	if (method === 'GET' && (path === '/news' || path === '/api/news' || path.endsWith('/news'))) {
+	if (method === 'GET' && (path === '/news' || path === '/api/news')) {
 		return newsHandler(req, res);
 	}
-	if (method === 'POST' && (path === '/news/add' || path === '/api/news/add' || path.endsWith('/news/add'))) {
+	if (method === 'POST' && (path === '/news/add' || path === '/api/news/add')) {
 		return newsAddHandler(req, res);
 	}
-	if (method === 'POST' && (path === '/enquiry/submit' || path === '/api/enquiry/submit' || path.endsWith('/enquiry/submit'))) {
+	if (method === 'POST' && (path === '/enquiry/submit' || path === '/api/enquiry/submit')) {
 		return enquirySubmitHandler(req, res);
 	}
-	if (method === 'POST' && (path === '/membership/submit' || path === '/api/membership/submit' || path.endsWith('/membership/submit'))) {
+	if (method === 'POST' && (path === '/membership/submit' || path === '/api/membership/submit')) {
 		return membershipSubmitHandler(req, res);
 	}
-	if (method === 'POST' && (path === '/membership/checkout' || path === '/api/membership/checkout' || path.endsWith('/membership/checkout'))) {
+	if (method === 'POST' && (path === '/membership/checkout' || path === '/api/membership/checkout')) {
 		return membershipCheckoutHandler(req, res);
 	}
-	if (method === 'POST' && (path === '/membership/verify-email' || path === '/api/membership/verify-email' || path.endsWith('/membership/verify-email'))) {
+	if (method === 'POST' && (path === '/membership/verify-email' || path === '/api/membership/verify-email')) {
 		return membershipVerifyEmailHandler(req, res);
 	}
-	if (method === 'POST' && (path === '/verification/request' || path === '/api/verification/request' || path.endsWith('/verification/request'))) {
+	if (method === 'POST' && (path === '/verification/request' || path === '/api/verification/request')) {
 		return verificationRequestHandler(req, res);
 	}
-	if (method === 'POST' && (path === '/verification/confirm' || path === '/api/verification/confirm' || path.endsWith('/verification/confirm'))) {
+	if (method === 'POST' && (path === '/verification/confirm' || path === '/api/verification/confirm')) {
 		return verificationConfirmHandler(req, res);
 	}
-	if (method === 'POST' && (path === '/certificates/issue' || path === '/api/certificates/issue' || path.endsWith('/certificates/issue'))) {
+	if (method === 'POST' && (path === '/certificates/issue' || path === '/api/certificates/issue')) {
 		return certificatesIssueHandler(req, res);
 	}
-	if (method === 'GET' && (path === '/verify' || path === '/api/verify' || path.endsWith('/verify'))) {
+	if (method === 'GET' && (path === '/verify' || path === '/api/verify')) {
 		return verifyHandler(req, res);
 	}
 
-	if (method === 'POST' && (path === '/admin/upload' || path === '/api/admin/upload' || path.endsWith('/admin/upload'))) {
+	if (method === 'POST' && (path === '/admin/upload' || path === '/api/admin/upload')) {
 		return adminUploadHandler(req, res);
 	}
 
-	if (path === '/admin' || path === '/api/admin' || path.startsWith('/admin/') || path.startsWith('/api/admin/') || path.endsWith('/admin')) {
+	if (path === '/admin' || path === '/api/admin' || path.startsWith('/admin/') || path.startsWith('/api/admin/')) {
 		const adminPath = path.replace(/^\/(?:api\/)?admin\/?/, '').split('/').filter(Boolean);
 		if (adminPath.length === 0 && method === 'GET') {
 			req.query = req.query || {};
@@ -146,7 +146,7 @@ export default async function handler(req, res) {
    }
 
    // Dev-only: reset a test account
-   if (method === 'POST' && (path === '/dev/reset-account' || path === '/api/dev/reset-account' || path.endsWith('/dev/reset-account'))) {
+   if (method === 'POST' && (path === '/dev/reset-account' || path === '/api/dev/reset-account')) {
      if (process.env.NODE_ENV !== 'development') {
        return res.status(404).json({ error: 'Not found.' });
      }
