@@ -15,7 +15,7 @@ import {
   verifyPassword, hashPassword,
   getCourses, insertCourse, deleteCourse,
   getAllEnquiries, getAllApplications, getApplicationById, getAllEventRegistrations, getAllMemberships, getAllUsers, getUserByEmail,
-  getMembershipByNo, insertCertificate, getCertificateByCode,
+  getMembershipByNo, insertCertificate, getCertificateByCode, updateUserSafe,
   getProjects, insertProject, deleteProject,
   getEvents, insertEvent, deleteEvent,
   getPartners, insertPartner, deletePartner,
@@ -174,6 +174,10 @@ async function generateMembershipId() {
   const usersRes = await supabase.from('users').select('membership_no').like('membership_no', pattern);
   let appsRes = await supabase.from('applications').select('member_id').like('member_id', pattern);
 
+  if (usersRes.error && String(usersRes.error.message || '').toLowerCase().includes('membership_no')) {
+    usersRes.data = [];
+    usersRes.error = null;
+  }
   if (appsRes.error && String(appsRes.error.message || '').toLowerCase().includes('member_id')) {
     appsRes = { data: [], error: null } as any;
   }
@@ -837,7 +841,7 @@ export async function startServer() {
           resetSeed = hashPassword(tempPassword);
         }
 
-        const syncUserRes = await supabase.from('users').update({
+        const syncUserRes = await updateUserSafe(userRow.id, {
           role: 'member',
           membership_no: userRow.membership_no || memberId,
           membership_status: 'active',
@@ -846,9 +850,9 @@ export async function startServer() {
           password_salt: resetSeed ? resetSeed.salt : userRow.password_salt,
           must_reset_password: true,
           updated_at: new Date().toISOString()
-        }).eq('id', userRow.id).select('*').single();
-        if (!syncUserRes.error && syncUserRes.data) {
-          userRow = syncUserRes.data;
+        });
+        if (syncUserRes) {
+          userRow = syncUserRes;
         }
       }
 
@@ -856,16 +860,16 @@ export async function startServer() {
       const tokenHash = crypto.createHash('sha256').update(rawSetupToken).digest('hex');
       const setupExpiry = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
-      const setupTokenRes = await supabase.from('users').update({
+      const setupTokenRes = await updateUserSafe(userRow.id, {
         password_reset_token: tokenHash,
         password_reset_expires_at: setupExpiry,
         must_reset_password: true,
         membership_no: userRow.membership_no || memberId,
         membership_status: 'active',
         updated_at: new Date().toISOString()
-      }).eq('id', userRow.id);
+      });
 
-      if (setupTokenRes.error) {
+      if (!setupTokenRes) {
         return res.status(500).json({ error: setupTokenRes.error.message });
       }
 

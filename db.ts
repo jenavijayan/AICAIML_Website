@@ -563,20 +563,52 @@ export async function createUser(user: {
     created_at: new Date().toISOString()
   };
 
-  if (user.membershipNo) {
-    const withMembership = { ...baseRecord, membership_no: user.membershipNo };
-    let { data, error } = await supabase.from('users').insert(withMembership).select('*').single();
-    if (error) {
-      const fallback = await supabase.from('users').insert(baseRecord).select('*').single();
-      if (fallback.error) throw fallback.error;
-      data = fallback.data;
-    }
-    return toPublicUser(data);
-  }
+  const optionalColumns = ['membership_no', 'membership_status', 'membership_plan', 'permissions', 'created_at'];
+  let record = { ...baseRecord };
+  if (user.membershipNo) record.membership_no = user.membershipNo;
 
-  const { data, error } = await supabase.from('users').insert(baseRecord).select('*').single();
-  if (error) throw error;
-  return toPublicUser(data);
+  while (true) {
+    const { data, error } = await supabase.from('users').insert(record).select('*').single();
+    if (!error) return toPublicUser(data);
+
+    const missingOptional = optionalColumns.find((col) =>
+      Object.prototype.hasOwnProperty.call(record, col) && String(error.message || '').toLowerCase().includes(col.toLowerCase())
+    );
+    if (!missingOptional || !record[missingOptional]) {
+      console.error('createUser unrecoverable error:', error);
+      throw error;
+    }
+
+    console.warn(`Column '${missingOptional}' not found on users table — retrying insert without it.`);
+    delete (record as any)[missingOptional];
+  }
+}
+
+// Update a user row, gracefully dropping optional columns that may not exist
+// on older Supabase schemas (membership_no, membership_status, must_reset_password, etc.)
+export async function updateUserSafe(userId: string, updates: Record<string, any>): Promise<any | null> {
+  const optionalColumns = [
+    'membership_no', 'membership_plan', 'membership_status',
+    'must_reset_password', 'password_reset_token', 'password_reset_expires_at',
+    'photo_url', 'google_id', 'updated_at'
+  ];
+  const current = { ...updates };
+
+  while (true) {
+    const { data, error } = await supabase.from('users').update(current).eq('id', userId).select('*').single();
+    if (!error) return data;
+
+    const missingOptional = optionalColumns.find((col) =>
+      Object.prototype.hasOwnProperty.call(current, col) && String(error.message || '').toLowerCase().includes(col.toLowerCase())
+    );
+    if (!missingOptional) {
+      console.error('Failed to update user (non-optional column error):', error);
+      return null;
+    }
+
+    console.warn(`Column '${missingOptional}' not found on users table — retrying update without it.`);
+    delete current[missingOptional];
+  }
 }
 
 export async function getUserByEmail(email: string): Promise<PublicUser | undefined> {
