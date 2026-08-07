@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Mail, Phone, UserCircle2 } from 'lucide-react';
 import { Card } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
+import { apiRequest } from '../lib/api';
 
 const MENU = [
   'Dashboard',
@@ -33,27 +34,8 @@ export default function MemberDashboard({ onGoToMemberLogin }: MemberDashboardPr
         setLoading(true);
         setError(null);
 
-        const res = await fetch('/api/auth/member/dashboard', { credentials: 'include' });
-        const text = await res.text();
-        let payload: any = {};
-        if (text) {
-          try {
-            payload = JSON.parse(text);
-          } catch {
-            payload = {};
-          }
-        }
-
-        if (!res.ok) {
-          if (res.status === 401 && active) {
-            onGoToMemberLogin();
-            return;
-          }
-          if (active) setError(payload?.error || 'Failed to load dashboard.');
-          return;
-        }
-
-        if (active) setData(payload);
+        const data = await apiRequest<{ profile?: any }>('/api/auth/member/dashboard', { method: 'GET' });
+        if (active) setData(data);
       } catch {
         if (active) setError('Unable to load dashboard right now.');
       } finally {

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { apiRequest } from '../lib/api';
 
 export interface AuthUser {
   id: string;
@@ -29,18 +30,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUser = async () => {
     try {
-      const res = await fetch('/api/auth/me', { credentials: 'include' });
-      if (res.ok) {
-        const text = await res.text();
-        if (!text) {
-          setUser(null);
-        } else {
-          const data = JSON.parse(text);
-          setUser(data.user);
-        }
-      } else {
-        setUser(null);
-      }
+      const data = await apiRequest<{ user: any }>('/api/auth/me', { method: 'GET' });
+      setUser(data.user);
     } catch {
       setUser(null);
     } finally {
@@ -54,35 +45,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     try {
-      const res = await fetch('/api/auth/login', {
+      const data = await apiRequest<{ user: any }>('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ email, password })
       });
-      const text = await res.text();
-      let data: any = {};
-      if (text) {
-        try {
-          data = JSON.parse(text);
-        } catch {
-          data = {};
-        }
-      }
-      if (!res.ok) {
-        const message = data?.error || data?.message || `Login failed (${res.status}).`;
-        return { success: false, error: message };
-      }
       setUser(data.user);
       return { success: true };
-    } catch {
-      return { success: false, error: 'Unable to reach the server. Please try again.' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Unable to reach the server. Please try again.' };
     }
   };
 
   const logout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      await apiRequest('/api/auth/logout', { method: 'POST' });
     } catch {
       // Ignore network failures and clear the local session state.
     } finally {
@@ -92,36 +68,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const memberLogin = async (identifier: string, password: string) => {
     try {
-      const res = await fetch('/api/auth/member/login', {
+      const data = await apiRequest<{ user: any; code?: string; status?: string }>('/api/auth/member/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ identifier, password })
       });
 
-      const text = await res.text();
-      let data: any = {};
-      if (text) {
-        try {
-          data = JSON.parse(text);
-        } catch {
-          data = {};
-        }
-      }
-
-      if (!res.ok) {
-        return {
-          success: false,
-          error: data?.error || data?.message || `Login failed (${res.status}).`,
-          code: data?.code,
-          status: data?.status
-        };
-      }
-
       setUser(data.user);
       return { success: true };
-    } catch {
-      return { success: false, error: 'Unable to reach the server. Please try again.' };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message || 'Unable to reach the server. Please try again.',
+        code: err.body?.code,
+        status: err.body?.status
+      };
     }
   };
 

@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Button, IconButton, Badge, Card, Dialog, DialogHeader } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import { useAuth } from '../context/AuthContext';
+import { apiRequest } from '../lib/api';
 
 type Tab = 'overview' | 'applications' | 'members';
 
@@ -145,29 +146,14 @@ export default function AdminDashboard() {
   const [memberFilterRole, setMemberFilterRole] = useState('all');
 
   const fetchJson = async (url: string) => {
-    const res = await fetch(url, { credentials: 'include' });
-    if (!res.ok) {
-      let errMsg = `Request failed (${res.status})`;
-      try {
-        const errBody = await res.json();
-        if (errBody?.error) errMsg = errBody.error;
-      } catch {}
-      throw new Error(errMsg);
-    }
-    return res.json();
+    return apiRequest(url, { method: 'GET' });
   };
 
   const postJson = async (url: string, body: any) => {
-    const res = await fetch(url, {
+    return apiRequest(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify(body),
+      body: JSON.stringify(body)
     });
-    let data: any = null;
-    try { data = await res.json(); } catch {}
-    if (!res.ok) throw new Error((data && data.error) || `Request failed (${res.status})`);
-    return data;
   };
 
   // ---- OVERVIEW ----

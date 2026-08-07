@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, KeyRound } from 'lucide-react';
 import { Button, TextField } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
+import { apiRequest } from '../lib/api';
 
 interface SetPasswordProps {
   tokenFromHash: string;
@@ -51,27 +52,10 @@ export default function SetPassword({ tokenFromHash, onSuccess }: SetPasswordPro
 
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/member/set-password', {
+      await apiRequest('/api/auth/member/set-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ token, newPassword: password })
       });
-
-      const text = await res.text();
-      let data: any = {};
-      if (text) {
-        try {
-          data = JSON.parse(text);
-        } catch {
-          data = {};
-        }
-      }
-
-      if (!res.ok) {
-        setError(data?.error || INVALID_PASSWORD_MESSAGE);
-        return;
-      }
 
       setSuccess('Password set successfully. Redirecting to Member Login...');
       setTimeout(() => {
