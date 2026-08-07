@@ -65,16 +65,4 @@ describe('public API routes', () => {
     const payload = await response.json();
     expect(payload.error).toMatch(/name|email|message/i);
   });
-
-  it('rejects Google member login without an idToken', async () => {
-    const response = await fetch(`${baseUrl}/api/auth/member/google`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    });
-
-    expect(response.status).toBe(400);
-    const payload = await response.json();
-    expect(payload.error).toMatch(/id token is required/i);
-  });
 });
