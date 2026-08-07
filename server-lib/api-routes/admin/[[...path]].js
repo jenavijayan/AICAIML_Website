@@ -155,15 +155,29 @@ function resolvePublicBaseUrl(req, logStep) {
 
 async function selectWithOrderFallback(table, primaryOrderColumn) {
   let result = await supabase.from(table).select('*').order(primaryOrderColumn, { ascending: false });
-  if (!result.error) return result;
+  if (!result.error && Array.isArray(result.data) && result.data.length > 0) return result;
 
-  if (errorMentionsColumn(result.error, primaryOrderColumn)) {
-    result = await supabase.from(table).select('*').order('created_at', { ascending: false });
-    if (!result.error) return result;
+  if (!result.error && (!result.data || result.data.length === 0)) {
+    const emptyCheck = await supabase.from(table).select('*');
+    if (!emptyCheck.error && Array.isArray(emptyCheck.data) && emptyCheck.data.length > 0) {
+      return emptyCheck;
+    }
   }
 
-  // Last resort for legacy deployments that do not support expected sort columns.
+  if (result.error && errorMentionsColumn(result.error, primaryOrderColumn)) {
+    result = await supabase.from(table).select('*').order('created_at', { ascending: false });
+    if (!result.error && Array.isArray(result.data) && result.data.length > 0) return result;
+  }
+
   result = await supabase.from(table).select('*');
+  
+  if (!result.data || result.data.length === 0) {
+    const idCheck = await supabase.from(table).select('id').limit(100);
+    if (!idCheck.error && Array.isArray(idCheck.data) && idCheck.data.length > 0) {
+      return { data: idCheck.data, error: null };
+    }
+  }
+  
   return result;
 }
 
@@ -661,6 +675,17 @@ async function handleEnquiries(req, res) {
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
   const { data, error } = await selectWithOrderFallback('enquiries', 'submitted_at');
   if (error) return json(res, 500, { error: `Failed to load enquiries: ${error.message}` });
+
+  if (!data || data.length === 0) {
+    const { count } = await countTable('enquiries');
+    if (count > 0) {
+      const retry = await supabase.from('enquiries').select('*');
+      if (!retry.error && Array.isArray(retry.data) && retry.data.length > 0) {
+        return json(res, 200, retry.data);
+      }
+    }
+  }
+
   json(res, 200, data || []);
 }
 
@@ -669,6 +694,17 @@ async function handleApplications(req, res) {
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
   const { data, error } = await selectWithOrderFallback('applications', 'submitted_at');
   if (error) return json(res, 500, { error: `Failed to load applications: ${error.message}` });
+
+  if (!data || data.length === 0) {
+    const { count } = await countTable('applications');
+    if (count > 0) {
+      const retry = await supabase.from('applications').select('*');
+      if (!retry.error && Array.isArray(retry.data) && retry.data.length > 0) {
+        return json(res, 200, retry.data);
+      }
+    }
+  }
+
   json(res, 200, data || []);
 }
 
@@ -837,6 +873,17 @@ async function handleEventRegistrations(req, res) {
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
   const { data, error } = await selectWithOrderFallback('event_registrations', 'registered_at');
   if (error) return json(res, 500, { error: `Failed to load event registrations: ${error.message}` });
+
+  if (!data || data.length === 0) {
+    const { count } = await countTable('event_registrations');
+    if (count > 0) {
+      const retry = await supabase.from('event_registrations').select('*');
+      if (!retry.error && Array.isArray(retry.data) && retry.data.length > 0) {
+        return json(res, 200, retry.data);
+      }
+    }
+  }
+
   json(res, 200, data || []);
 }
 
@@ -845,6 +892,17 @@ async function handleMemberships(req, res) {
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
   const { data, error } = await selectWithOrderFallback('memberships', 'paid_at');
   if (error) return json(res, 500, { error: `Failed to load memberships: ${error.message}` });
+
+  if (!data || data.length === 0) {
+    const { count } = await countTable('memberships');
+    if (count > 0) {
+      const retry = await supabase.from('memberships').select('*');
+      if (!retry.error && Array.isArray(retry.data) && retry.data.length > 0) {
+        return json(res, 200, retry.data);
+      }
+    }
+  }
+
   json(res, 200, data || []);
 }
 
@@ -853,6 +911,17 @@ async function handleUsers(req, res) {
   if (!admin) return json(res, 401, { error: 'Admin access required.' });
   const { data, error } = await selectWithOrderFallback('users', 'created_at');
   if (error) return json(res, 500, { error: `Failed to load users: ${error.message}` });
+
+  if (!data || data.length === 0) {
+    const { count } = await countTable('users');
+    if (count > 0) {
+      const retry = await supabase.from('users').select('*');
+      if (!retry.error && Array.isArray(retry.data) && retry.data.length > 0) {
+        return json(res, 200, retry.data);
+      }
+    }
+  }
+
   const safe = (data || []).map((u) => {
     const { password_hash, password_salt, ...rest } = u;
     let permissions = rest.permissions;

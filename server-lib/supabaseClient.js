@@ -14,10 +14,18 @@ const SUPABASE_ENABLED =
 let supabase = null;
 if (SUPABASE_ENABLED) {
   supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    },
     realtime: {
       transport: WebSocket
     }
   });
 }
 
-export { supabase, SUPABASE_ENABLED }
+export function isSupabaseConfigured() {
+  return SUPABASE_ENABLED;
+}
+
+export { supabase, SUPABASE_ENABLED };

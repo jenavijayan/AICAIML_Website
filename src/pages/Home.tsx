@@ -423,7 +423,7 @@ export default function Home({
                 desc: 'Robotics systems that plan, adapt, and execute.'
               },
               {
-                src: resolveAssetUrl('/videos/v11.mp4'),
+                src: resolveAssetUrl('/videos/showcase-v4.mp4'),
                 title: 'Precision Robotics',
                 desc: 'Fine motor control engineered for real-world tasks.'
               }
