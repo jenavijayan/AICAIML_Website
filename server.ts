@@ -196,9 +196,9 @@ async function generateMembershipId() {
   return `AICAIML-${year}-${String(maxSeq + 1).padStart(4, '0')}`;
 }
 
-function createRateLimitMiddleware(windowMs = 60_000, maxRequests = 20) {
+function createRateLimitMiddleware(windowMs = 5 * 60_000, maxRequests = 200, keyGenerator?: (req: express.Request) => string) {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const key = req.ip || 'unknown';
+    const key = keyGenerator ? keyGenerator(req) : (req.ip || 'unknown');
     const now = Date.now();
     const entry = rateLimitStore.get(key);
 
@@ -416,11 +416,13 @@ export async function startServer() {
 
     app.disable('x-powered-by');
 
-  const publicRateLimit = createRateLimitMiddleware();
+  const publicRateLimit = createRateLimitMiddleware(5 * 60_000, 200);
+  const adminRateLimit = createRateLimitMiddleware(5 * 60_000, 500, (req) => `admin-${req.ip || 'unknown'}`);
 
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
-  app.use('/api', publicRateLimit);
+  app.use('/api', (req, res, next) => {
+    if (req.path.startsWith('/api/admin')) return adminRateLimit(req, res, next);
+    return publicRateLimit(req, res, next);
+  });
 
   app.use((req, res, next) => {
     if (req.body === undefined) req.body = {};
