@@ -7,8 +7,8 @@ data/
 .DS_Store
 
 # Ignore video files (uploaded manually later)
-*.mp4
-*.mov
-*.avi
-*.mkv
-*.webm
+# *.mp4
+# *.mov
+# *.avi
+# *.mkv
+# *.webm
