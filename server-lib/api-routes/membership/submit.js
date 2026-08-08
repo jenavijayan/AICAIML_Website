@@ -1,5 +1,6 @@
 import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
 import { resetTestAccount } from '../../authFallback.js';
+import { isEmailVerified } from '../../verificationStore.js';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import { applicationReceived } from '../../email-templates/index.js';
@@ -98,6 +99,9 @@ export default async function handler(req, res) {
     const rawEmail = (parsedFormData && (parsedFormData.email || parsedFormData.emailId || parsedFormData.contactEmail)) || '';
     const email = String(rawEmail).trim().toLowerCase();
     if (!email) {
+      return res.status(400).json({ error: 'A valid email address is required.' });
+    }
+    if (!isEmailVerified(email)) {
       return res.status(403).json({ error: 'Email verification required. Please verify your email before submitting.' });
     }
 

@@ -1,4 +1,4 @@
-import { consumeVerificationCode } from '../../verificationStore.js';
+import { consumeVerificationCode, markEmailVerified, isEmailVerified } from '../../verificationStore.js';
 import { clearVerificationCookie, verifyVerificationCookie } from '../../verificationCookie.js';
 
 export default async function handler(req, res) {
@@ -47,6 +47,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: cookieVerification.error });
       }
       clearVerificationCookie(res);
+      markEmailVerified(email);
       return res.json({ success: true, message: 'Email verified successfully.' });
     }
 
@@ -56,6 +57,7 @@ export default async function handler(req, res) {
     }
 
     clearVerificationCookie(res);
+    markEmailVerified(email);
     res.json({ success: true, message: 'Email verified successfully.' });
   } catch (err) {
     console.error('Verification confirm error:', err);

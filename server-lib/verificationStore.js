@@ -1,4 +1,5 @@
 const verificationStore = new Map();
+const verifiedEmails = new Set();
 
 export function setVerificationCode(email, code, ttlMs = 10 * 60 * 1000) {
   const cleanEmail = String(email || '').trim().toLowerCase();
@@ -32,4 +33,12 @@ export function consumeVerificationCode(email, code) {
 
   verificationStore.delete(cleanEmail);
   return { ok: true };
+}
+
+export function isEmailVerified(email) {
+  return verifiedEmails.has(String(email || '').trim().toLowerCase());
+}
+
+export function markEmailVerified(email) {
+  verifiedEmails.add(String(email || '').trim().toLowerCase());
 }

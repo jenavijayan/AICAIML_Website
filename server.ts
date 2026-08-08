@@ -1758,30 +1758,28 @@ AICAIML Council`;
       registeredAt: new Date().toISOString()
     });
 
-    const emailBody = `
-      Subject: [AICAIML] Registration Received - ${eventTitle}
-      To: ${email}
-      
-      Dear ${name},
-      
-      We have registered your interest for "${eventTitle}" with AICAIML.
-      
-      REGISTRATION RECEIPT:
-      - Ticket ID: ${registrationId}
-      - Event: ${eventTitle}
-      - Registrant: ${name} (${organization || 'Individual'})
-      - Mode: Hybrid/Online Access link will be shared 24 hours prior to the event.
-      
-      We look forward to your active participation in advancing AI, Machine Learning, and Robotics in India.
-      
-      Best Regards,
-      Events Secretariat, AICAIML
-    `;
+    const emailBody = `Dear ${name},
+
+We have registered your interest for "${eventTitle}" with AICAIML.
+
+REGISTRATION RECEIPT:
+- Ticket ID: ${registrationId}
+- Event: ${eventTitle}
+- Registrant: ${name} (${organization || 'Individual'})
+- Mode: Hybrid/Online Access link will be shared 24 hours prior to the event.
+
+We look forward to your active participation in advancing AI, Machine Learning, and Robotics in India.
+
+Best Regards,
+Events Secretariat, AICAIML`;
+
+    const { sent } = await sendEnquiryEmail(emailLower, `[AICAIML] Registration Received - ${eventTitle}`, emailBody, undefined);
 
     res.json({
       success: true,
       registrationId,
       message: `Successfully registered interest for ${eventTitle}`,
+      emailSent: sent,
       emailLog: emailBody
     });
   });
