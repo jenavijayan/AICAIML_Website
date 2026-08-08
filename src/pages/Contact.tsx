@@ -38,7 +38,18 @@ export default function Contact() {
         credentials: 'include'
       });
       clearTimeout(timeoutId);
-      const data = await response.json();
+
+      const text = await response.text();
+      let data: any = {};
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          console.error('Non-JSON response from /api/enquiry/submit:', text.slice(0, 200));
+          throw new Error('Server returned an unexpected response. Please try again later.');
+        }
+      }
+
       if (!response.ok) {
         throw new Error(data.error || 'Failed to submit enquiry.');
       }

@@ -1,7 +1,6 @@
 {
   "outputDirectory": "dist",
   "buildCommand": "npm run build",
-  "framework": "vite",
   "headers": [
     {
       "source": "/(images|videos|resources|uploads)/(.*)",
