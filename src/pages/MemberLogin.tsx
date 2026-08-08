@@ -126,7 +126,7 @@ export default function MemberLogin({ setCurrentPage, redirectAfterLogin }: Memb
             size: 'large',
             text: 'sign_in_with',
             shape: 'rectangular',
-            width: 280
+            width: '100%'
           });
           window.google.accounts.id.disableAutoSelect();
           gisInitialized.current = true;
@@ -174,10 +174,24 @@ export default function MemberLogin({ setCurrentPage, redirectAfterLogin }: Memb
     try {
       const result = await memberLogin(email.trim(), password);
       if (!result.success) {
+        if (result.code === 'PASSWORD_SETUP_REQUIRED') {
+          setCurrentPage('set-password');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
+        if (result.code === 'ACCOUNT_SETUP_REQUIRED') {
+          setError('This account is not fully configured yet. Please contact support.');
+          return;
+        }
+        if (result.status === 'pending' || result.status === 'rejected') {
+          setCurrentPage('member-access-denied');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
         setError(result.error || 'Invalid email or password.');
         return;
       }
-      setMemberName(email);
+      setMemberName(result.user?.name || result.user?.email || 'Member');
       setSignedIn(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {

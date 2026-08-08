@@ -17,7 +17,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  memberLogin: (identifier: string, password: string) => Promise<{ success: boolean; error?: string; code?: string; status?: string }>;
+  memberLogin: (identifier: string, password: string) => Promise<{ success: boolean; user?: any; error?: string; code?: string; status?: string; notApproved?: boolean }>;
   memberGoogleLogin: (idToken: string) => Promise<{ success: boolean; error?: string; notApproved?: boolean; status?: string; user?: AuthUser }>;
   logout: () => Promise<void>;
   hasPremiumAccess: boolean;
@@ -69,19 +69,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const memberLogin = async (identifier: string, password: string) => {
     try {
-      const data = await apiRequest<{ user: any; code?: string; status?: string }>('/api/auth/member/login', {
+      const data = await apiRequest<{ user: any; code?: string; status?: string; notApproved?: boolean }>('/api/auth/member/login', {
         method: 'POST',
         body: JSON.stringify({ identifier, password })
       });
 
       setUser(data.user);
-      return { success: true };
+      return { success: true, user: data.user };
     } catch (err: any) {
       return {
         success: false,
         error: err.message || 'Unable to reach the server. Please try again.',
         code: err.body?.code,
-        status: err.body?.status
+        status: err.body?.status,
+        notApproved: err.body?.notApproved ?? false
       };
     }
   };

@@ -24,10 +24,19 @@ export default function Contact() {
     }
   });
 
+  React.useEffect(() => {
+    resetVerification();
+  }, [form.email, resetVerification]);
+
   const submitVerifiedForm = async () => {
     setLoading(true);
     setError(null);
     try {
+      if (!form.name || !form.email || !form.message) {
+        setError('Please fill in all required fields before submitting.');
+        setLoading(false);
+        return;
+      }
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
       const response = await fetch('/api/enquiry/submit', {
@@ -71,8 +80,8 @@ export default function Contact() {
     e.preventDefault();
     setSuccess(null);
     setError(null);
-    if (!form.email) {
-      setError('Please provide your email address.');
+    if (!form.name || !form.email || !form.message) {
+      setError('Please fill in all required fields.');
       return;
     }
     const isExempt = form.email.trim().toLowerCase() === EXEMPT_ADMIN_EMAIL;
