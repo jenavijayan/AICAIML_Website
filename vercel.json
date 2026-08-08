@@ -11,8 +11,5 @@
   ],
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
-  ],
-  "routes": [
-    { "src": "/api/admin/(.*)", "dest": "/api/admin/[[...path]]" }
   ]
 }
