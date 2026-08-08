@@ -47,17 +47,17 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: cookieVerification.error });
       }
       clearVerificationCookie(res);
-      markEmailVerified(email);
+      await markEmailVerified(email);
       return res.json({ success: true, message: 'Email verified successfully.' });
     }
 
-    const verified = consumeVerificationCode(email, cleanCode);
+    const verified = await consumeVerificationCode(email, cleanCode);
     if (!verified.ok) {
       return res.status(400).json({ error: verified.error });
     }
 
     clearVerificationCookie(res);
-    markEmailVerified(email);
+    await markEmailVerified(email);
     res.json({ success: true, message: 'Email verified successfully.' });
   } catch (err) {
     console.error('Verification confirm error:', err);

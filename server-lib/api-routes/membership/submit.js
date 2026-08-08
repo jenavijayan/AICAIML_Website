@@ -101,7 +101,7 @@ export default async function handler(req, res) {
     if (!email) {
       return res.status(400).json({ error: 'A valid email address is required.' });
     }
-    if (!isEmailVerified(email)) {
+    if (!await isEmailVerified(email)) {
       return res.status(403).json({ error: 'Email verification required. Please verify your email before submitting.' });
     }
 

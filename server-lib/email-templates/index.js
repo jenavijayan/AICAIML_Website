@@ -1,7 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 
-const SITE_URL = process.env.BASE_URL || process.env.PUBLIC_BASE_URL || process.env.APP_BASE_URL || process.env.VITE_APP_BASE_URL || 'https://aic-aiml.org';
+const SITE_URL =
+  process.env.BASE_URL ||
+  process.env.PUBLIC_BASE_URL ||
+  process.env.APP_BASE_URL ||
+  process.env.VITE_APP_BASE_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
+  'https://aic-aiml.org';
 
 function normalizeBaseUrl(url) {
   if (!url) return 'https://aic-aiml.org';
@@ -40,7 +46,7 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-const logoUrl = 'https://aicaiml-website.vercel.app/assets/logo-web-TPNlqHKk.png';
+const logoUrl = `${BASE_URL}/assets/logo-web-TPNlqHKk.png`;
 
 function buildWrapper(bodyContent, maxWidth = '760px') {
   return `

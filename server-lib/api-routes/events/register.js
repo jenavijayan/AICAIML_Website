@@ -70,7 +70,7 @@ export default async function handler(req, res) {
     }
 
     const emailLower = String(email).trim().toLowerCase();
-    if (!isEmailVerified(emailLower)) {
+    if (!await isEmailVerified(emailLower)) {
       return res.status(403).json({ error: 'Email verification required. Please verify your email before registering.' });
     }
 

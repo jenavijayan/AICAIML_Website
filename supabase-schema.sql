@@ -699,6 +699,17 @@ CREATE TABLE IF NOT EXISTS public.membership_categories (
 );
 
 -- ============================================
+-- 34. VERIFICATION CODES (serverless-safe)
+-- ============================================
+CREATE TABLE IF NOT EXISTS public.verification_codes (
+  email TEXT PRIMARY KEY,
+  code TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  verified BOOLEAN DEFAULT false,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::TEXT
+);
+
+-- ============================================
 -- SEED DATA: Membership Categories
 -- ============================================
 INSERT INTO public.membership_categories (id, code, name, description, fee, validity_months, benefits, active, created_at) VALUES
@@ -795,3 +806,4 @@ ALTER TABLE public.news DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.partners DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.testimonials DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.membership_categories DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.verification_codes DISABLE ROW LEVEL SECURITY;
