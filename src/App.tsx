@@ -344,7 +344,19 @@ function AppShell() {
                             Pick a plan and pay securely to activate your membership instantly.
                           </p>
                         </div>
-                        <MembershipPlans />
+                        <MembershipPlans
+                          onJoinPlan={(plan) => {
+                            const categoryMap: Record<string, 'student' | 'msme' | 'corporate' | 'school' | 'university'> = {
+                              'plan-student': 'student',
+                              'plan-educator': 'school',
+                              'plan-individual': 'student',
+                              'plan-institutional': 'university'
+                            };
+                            const category = categoryMap[plan.id] || 'student';
+                            setSelectedCategory(category);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                        />
                       </div>
 
                       {/* Institutional registration (no fixed price, reviewed application) */}

@@ -10,6 +10,7 @@ export interface DialogProps {
   label: string;
   className?: string;
   children: React.ReactNode;
+  noAnimation?: boolean;
 }
 
 const FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -18,7 +19,7 @@ const FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:
  * focus return to the trigger element. The event-registration and donation
  * modals in App.tsx, plus the checkout modal in MembershipPlans.tsx, had
  * none of this: no focus trap, no Escape handler, no focus return. */
-export default function Dialog({ open, onClose, label, className = '', children }: DialogProps) {
+export default function Dialog({ open, onClose, label, className = '', children, noAnimation = false }: DialogProps & { noAnimation?: boolean }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -59,30 +60,54 @@ export default function Dialog({ open, onClose, label, className = '', children 
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-navy/60 backdrop-blur-sm"
-            aria-hidden="true"
-          />
-          <motion.div
-            ref={panelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label={label}
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className={cn(
-              'bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-lg w-full overflow-hidden relative z-10 max-h-[90vh] flex flex-col',
-              className
-            )}
-          >
-            {children}
-          </motion.div>
+          {noAnimation ? (
+            <>
+              <div
+                onClick={onClose}
+                className="absolute inset-0 bg-navy/60 backdrop-blur-sm"
+                aria-hidden="true"
+              />
+              <div
+                ref={panelRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label={label}
+                className={cn(
+                  'bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-lg w-full overflow-hidden relative z-10 max-h-[90vh] flex flex-col',
+                  className
+                )}
+              >
+                {children}
+              </div>
+            </>
+          ) : (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={onClose}
+                className="absolute inset-0 bg-navy/60 backdrop-blur-sm"
+                aria-hidden="true"
+              />
+              <motion.div
+                ref={panelRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label={label}
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className={cn(
+                  'bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-lg w-full overflow-hidden relative z-10 max-h-[90vh] flex flex-col',
+                  className
+                )}
+              >
+                {children}
+              </motion.div>
+            </>
+          )}
         </div>
       )}
     </AnimatePresence>

@@ -3,8 +3,9 @@ import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import { setVerificationCode } from '../../verificationStore.js';
 import { setVerificationCookie } from '../../verificationCookie.js';
+import { verificationCode } from '../../email-templates/index.js';
 
-async function sendEmail(to, subject, text) {
+async function sendHtmlEmail(to, subject, html, text) {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_USER === 'your-email@gmail.com') {
     return { sent: false };
   }
@@ -13,7 +14,13 @@ async function sendEmail(to, subject, text) {
       service: 'gmail',
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_APP_PASSWORD }
     });
-    await transporter.sendMail({ from: `"AICAIML Council" <${process.env.EMAIL_USER}>`, to, subject, text });
+    await transporter.sendMail({
+      from: `"AICAIML Council" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      text: text || html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim(),
+      html
+    });
     return { sent: true };
   } catch (err) {
     console.error('Failed to send email:', err);
@@ -59,8 +66,9 @@ export default async function handler(req, res) {
     const code = String(Math.floor(100000 + Math.random() * 900000));
     setVerificationCode(cleanEmail, code);
     setVerificationCookie(res, cleanEmail, code);
+    const htmlBody = verificationCode({ code });
     const emailBody = `Your AICAIML verification code is: ${code}\n\nThis code expires in 10 minutes.`;
-    const { sent } = await sendEmail(cleanEmail, 'AICAIML Email Verification', emailBody);
+    const { sent } = await sendHtmlEmail(cleanEmail, 'AICAIML Email Verification', htmlBody, emailBody);
 
     const response = { success: true, sent, message: 'Verification code sent.' };
     if (process.env.NODE_ENV !== 'production') {

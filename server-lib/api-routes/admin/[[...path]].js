@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import { getSupabaseSessionUser, verifySignedSessionToken, parseCookies, SESSION_COOKIE, SUPABASE_ENABLED, toPublicUser } from '../../authFallback.js';
 import { supabase } from '../../supabaseClient.js';
+import { membershipApproval, membershipRejection } from '../../email-templates/index.js';
 
 function parseJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -710,9 +711,15 @@ async function handleApproveApplication(req, res, id) {
 
     const baseUrl = resolvePublicBaseUrl(req, logStep);
     const membershipType = String(application.category || application.membership_category || 'member').toUpperCase();
-    let emailBody = `Dear ${name},\n\nCongratulations! Your application for AICAIML ${membershipType} membership has been reviewed and approved by the Membership Board.\n\nAPPROVAL DETAILS:\n - Membership ID: ${memberId}\n - Application ID: ${application.id}\n - Membership Type: ${membershipType}\n - Approval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}]\n\nYour membership is now active. To access the member portal, sign in using your approved Google account at: ${baseUrl}/#member-login\n\nNo password is required — member sign-in uses Google Sign-In only.`;
-
-    emailBody += `\n\nWelcome to India's premier AI/ML advancements ecosystem!\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
+    const htmlBody = membershipApproval({
+      name,
+      membershipNo: memberId,
+      applicationId: application.id,
+      membershipType,
+      approvalDate,
+      portalUrl: `${baseUrl}/#member-login`
+    });
+    const textBody = `Dear ${name},\n\nCongratulations! Your AICAIML ${membershipType} membership has been approved.\n\nMembership ID: ${memberId}\nApplication ID: ${application.id}\nMembership Type: ${membershipType}\nApproval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nYour membership is now active. To access the member portal, sign in using your approved Google account at: ${baseUrl}/#member-login\n\nNo password is required — member sign-in uses Google Sign-In only.\n\nWelcome to India's premier AI/ML advancements ecosystem!\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence and Machine Learning (AICAIML)`;
 
     let emailSent = false;
     try {
@@ -721,7 +728,13 @@ async function handleApproveApplication(req, res, id) {
         auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_APP_PASSWORD }
       });
       if (process.env.EMAIL_USER && process.env.EMAIL_APP_PASSWORD && process.env.EMAIL_USER !== 'your-email@gmail.com') {
-        await transporter.sendMail({ from: `"AICAIML Council" <${process.env.EMAIL_USER}>`, to: email, subject: `[AICAIML] Membership Application Approved - ${application.membership_no}`, text: emailBody });
+        await transporter.sendMail({
+          from: `"AICAIML Council" <${process.env.EMAIL_USER}>`,
+          to: email,
+          subject: `[AICAIML] Membership Application Approved - ${application.membership_no}`,
+          text: textBody,
+          html: htmlBody
+        });
         emailSent = true;
       }
       logStep('notification.email.result', { sent: emailSent, mode: setup.mode });
@@ -768,7 +781,8 @@ async function handleRejectApplication(req, res, id) {
   const email = (formData.emailId || formData.email || 'applicant@aic-aiml.org').trim().toLowerCase();
 
   const membershipType = String(application.category || application.membership_category || 'member').toUpperCase();
-  const emailBody = `Dear ${name},\n\nThank you for your interest in AICAIML ${membershipType} membership.\n\nAfter careful review by the Membership Board, we regret to inform you that your application (Ref: ${application.id}) has been marked as Rejected.\n\n${reason ? `REJECTION REASON:\n${reason}\n\n` : ''}If you believe this decision was made in error, or if you would like to address the concerns noted above, please contact our Membership Office at support@aic-aiml.org with your application reference number.\n\nYou may also choose to resubmit a new application after addressing the feedback provided.\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
+  const htmlBody = membershipRejection({ name, membershipType, applicationId: application.id, reason });
+  const textBody = `Dear ${name},\n\nThank you for your interest in AICAIML ${membershipType} membership.\n\nAfter careful review by the Membership Board, we regret to inform you that your application (Ref: ${application.id}) has been marked as Rejected.\n\n${reason ? `REJECTION REASON:\n${reason}\n\n` : ''}If you believe this decision was made in error, or if you would like to address the concerns noted above, please contact our Membership Office at support@aic-aiml.org with your application reference number.\n\nYou may also choose to resubmit a new application after addressing the feedback provided.\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence and Machine Learning (AICAIML)`;
 
   try {
     const transporter = nodemailer.createTransport({
@@ -776,7 +790,13 @@ async function handleRejectApplication(req, res, id) {
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_APP_PASSWORD }
     });
     if (process.env.EMAIL_USER && process.env.EMAIL_APP_PASSWORD && process.env.EMAIL_USER !== 'your-email@gmail.com') {
-      await transporter.sendMail({ from: `"AICAIML Council" <${process.env.EMAIL_USER}>`, to: email, subject: `[AICAIML] Membership Application Update - ${application.membership_no}`, text: emailBody });
+      await transporter.sendMail({
+        from: `"AICAIML Council" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: `[AICAIML] Membership Application Update - ${application.membership_no}`,
+        text: textBody,
+        html: htmlBody
+      });
     }
   } catch (err) {
     console.error('Failed to send rejection email:', err);

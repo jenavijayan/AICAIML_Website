@@ -28,7 +28,14 @@ export default function CourseDetail({ courseId, setCurrentPage, onBack }: Cours
       })
       .then((data: Course[]) => {
         if (Array.isArray(data) && data.length > 0) {
-          setCourses(data);
+          const merged = data.map((apiCourse) => {
+            const initial = initialCourses.find((c) => c.id === apiCourse.id);
+            if (initial && !apiCourse.freeContent && initial.freeContent) {
+              return { ...apiCourse, freeContent: initial.freeContent };
+            }
+            return apiCourse;
+          });
+          setCourses(merged);
         }
       })
       .catch((err) => console.warn('Falling back to bundled course list:', err));
@@ -118,7 +125,17 @@ export default function CourseDetail({ courseId, setCurrentPage, onBack }: Cours
   const assessmentUnlocked = videoWatched && allLessonsRead;
 
   return (
-    <div id="course-detail-page" className="animate-slideup">
+    <div id="course-detail-page">
+      <style>{`
+        #course-detail-page .text-gradient-animate-light {
+          animation: none !important;
+          background-image: none !important;
+          -webkit-background-clip: unset !important;
+          background-clip: unset !important;
+          -webkit-text-fill-color: unset !important;
+          color: #ffffff !important;
+        }
+      `}</style>
 
       <PageHero
         title={course.title}
@@ -154,23 +171,51 @@ export default function CourseDetail({ courseId, setCurrentPage, onBack }: Cours
       </PageHero>
 
       {/* CONTENT */}
-      <section className="py-12 md:py-16 bg-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="py-10 md:py-16 bg-slate-50">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
 
           {course.access === 'free' && course.freeContent && (
-            <div className="space-y-6">
-              <p className="text-slate-600 leading-relaxed">{course.freeContent.intro}</p>
-              <div className="space-y-3">
-                {course.freeContent.lessons.map((lesson, idx) => (
-                  <div key={idx} className="flex gap-3 items-start bg-pale-blue/40 rounded-lg p-4 border border-corp-blue/10">
-                    <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="text-navy font-semibold text-sm">{lesson.title}</h4>
-                      <p className="text-slate-500 text-sm mt-1 leading-relaxed">{lesson.summary}</p>
+            <div className="space-y-8">
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+                <h2 className="text-2xl font-bold text-navy font-heading mb-4">About this course</h2>
+                <p className="text-slate-600 leading-relaxed text-base">{course.freeContent.intro}</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-xl p-5 border border-slate-200">
+                  <h3 className="text-navy font-semibold text-sm uppercase tracking-wide mb-3">What you'll learn</h3>
+                  <ul className="space-y-2.5">
+                    {course.topics.slice(0, 4).map((topic, idx) => (
+                      <li key={idx} className="flex items-start gap-2.5 text-sm text-slate-700">
+                        <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        {topic}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="bg-white rounded-xl p-5 border border-slate-200">
+                  <h3 className="text-navy font-semibold text-sm uppercase tracking-wide mb-3">Course overview</h3>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Duration</span>
+                      <span className="font-semibold text-navy">{course.duration}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Modules</span>
+                      <span className="font-semibold text-navy">{course.modules}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Level</span>
+                      <span className="font-semibold text-navy">{course.level}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Access</span>
+                      <span className="font-semibold text-emerald-700">Free</span>
                     </div>
                   </div>
-                ))}
+                </div>
               </div>
+
             </div>
           )}
 

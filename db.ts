@@ -2,6 +2,13 @@ import { supabase, SUPABASE_ENABLED } from './lib/supabase';
 import { initialNews, initialCourses, initialProjects, initialEvents, initialPartners, initialTestimonials } from './src/cmsData';
 import crypto from 'crypto';
 
+function ensureSupabase(): typeof supabase {
+  if (!supabase) {
+    throw new Error('Supabase is not configured on this deployment.');
+  }
+  return supabase;
+}
+
 const FALLBACK_AUTH_EMAIL = (process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || 'vendhanftpwatch@gmail.com').trim().toLowerCase();
 const FALLBACK_AUTH_PASSWORD = (process.env.ADMIN_PASSWORD || 'vendhan123').trim();
 const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
@@ -88,7 +95,7 @@ async function getUsersByEmailRows(email: string) {
 
 // --- Enquiries ---
 export async function insertEnquiry(enquiry: { id: string; name: string; email: string; phone?: string; message: string; submittedAt: string; verificationCode?: string; emailVerified?: string }) {
-  const { error } = await supabase.from('enquiries').insert({
+  const { error } = await ensureSupabase().from('enquiries').insert({
     id: enquiry.id,
     name: enquiry.name,
     email: enquiry.email,
@@ -102,15 +109,15 @@ export async function insertEnquiry(enquiry: { id: string; name: string; email: 
 }
 
 export function getAllEnquiries() {
-  return supabase.from('enquiries').select('*').order('submitted_at', { ascending: false });
+  return ensureSupabase().from('enquiries').select('*').order('submitted_at', { ascending: false });
 }
 
 export async function verifyEnquiryEmail(id: string, code: string) {
-  const { data, error } = await supabase.from('enquiries').select('*').eq('id', id).single();
+  const { data, error } = await ensureSupabase().from('enquiries').select('*').eq('id', id).single();
   if (error || !data) return { success: false, error: 'Enquiry not found.' };
   if (data.verification_code !== code) return { success: false, error: 'Invalid verification code.' };
   if (data.email_verified === 'true') return { success: false, error: 'Email is already verified.' };
-  const { error: updateError } = await supabase.from('enquiries').update({ email_verified: 'true' }).eq('id', id);
+  const { error: updateError } = await ensureSupabase().from('enquiries').update({ email_verified: 'true' }).eq('id', id);
   if (updateError) return { success: false, error: updateError.message };
   return { success: true };
 }
@@ -133,7 +140,7 @@ export async function insertApplication(app: {
   const createdAt = app.createdAt || app.submittedAt;
   const updatedAt = app.updatedAt || app.submittedAt;
 
-  const { error } = await supabase.from('applications').insert({
+  const { error } = await ensureSupabase().from('applications').insert({
     id: app.id,
     membership_no: app.membershipNo,
     category: app.category,
@@ -149,7 +156,7 @@ export async function insertApplication(app: {
   if (error) {
     // Retry with only essential columns for databases with an older schema
     // (phone, created_at, updated_at may not exist on legacy Supabase tables)
-    const { error: retryError } = await supabase.from('applications').insert({
+    const { error: retryError } = await ensureSupabase().from('applications').insert({
       id: app.id,
       membership_no: app.membershipNo,
       category: app.category,
@@ -175,21 +182,21 @@ export function getApplicationByEmail(email: string) {
 }
 
 export async function verifyApplicationEmail(id: string, code: string) {
-  const { data, error } = await supabase.from('applications').select('*').eq('id', id).single();
+  const { data, error } = await ensureSupabase().from('applications').select('*').eq('id', id).single();
   if (error || !data) return { success: false, error: 'Application not found.' };
   if (data.verification_code !== code) return { success: false, error: 'Invalid verification code.' };
   if (data.email_verified === 'true') return { success: false, error: 'Email is already verified.' };
-  const { error: updateError } = await supabase.from('applications').update({ email_verified: 'true' }).eq('id', id);
+  const { error: updateError } = await ensureSupabase().from('applications').update({ email_verified: 'true' }).eq('id', id);
   if (updateError) return { success: false, error: updateError.message };
   return { success: true };
 }
 
 export function getAllApplications() {
-  return supabase.from('applications').select('*').order('submitted_at', { ascending: false });
+  return ensureSupabase().from('applications').select('*').order('submitted_at', { ascending: false });
 }
 
 export function getApplicationById(id: string) {
-  return supabase.from('applications').select('*').eq('id', id).single();
+  return ensureSupabase().from('applications').select('*').eq('id', id).single();
 }
 
 export async function updateApplicationStatus(
@@ -211,7 +218,7 @@ export async function updateApplicationStatus(
   const current = { ...payload };
 
   while (true) {
-    const { data, error } = await supabase.from('applications').update(current).eq('id', id).select('*').single();
+    const { data, error } = await ensureSupabase().from('applications').update(current).eq('id', id).select('*').single();
     if (!error) return data;
 
     const missingOptional = optionalColumns.find((col) =>
@@ -237,7 +244,7 @@ export async function insertEventRegistration(reg: {
   verificationCode?: string;
   emailVerified?: string;
 }) {
-  const { error } = await supabase.from('event_registrations').insert({
+  const { error } = await ensureSupabase().from('event_registrations').insert({
     id: reg.id,
     event_id: reg.eventId,
     event_title: reg.eventTitle,
@@ -254,26 +261,26 @@ export async function insertEventRegistration(reg: {
 }
 
 export function getAllEventRegistrations() {
-  return supabase.from('event_registrations').select('*').order('registered_at', { ascending: false });
+  return ensureSupabase().from('event_registrations').select('*').order('registered_at', { ascending: false });
 }
 
 export async function verifyEventRegistrationEmail(id: string, code: string) {
-  const { data, error } = await supabase.from('event_registrations').select('*').eq('id', id).single();
+  const { data, error } = await ensureSupabase().from('event_registrations').select('*').eq('id', id).single();
   if (error || !data) return { success: false, error: 'Registration not found.' };
   if (data.verification_code !== code) return { success: false, error: 'Invalid verification code.' };
   if (data.email_verified === 'true') return { success: false, error: 'Email is already verified.' };
-  const { error: updateError } = await supabase.from('event_registrations').update({ email_verified: 'true' }).eq('id', id);
+  const { error: updateError } = await ensureSupabase().from('event_registrations').update({ email_verified: 'true' }).eq('id', id);
   if (updateError) return { success: false, error: updateError.message };
   return { success: true };
 }
 
 // --- News ---
 export function getNews() {
-  return supabase.from('news').select('id, title, summary, date, category, read_time as readTime, created_at').order('created_at', { ascending: false });
+  return ensureSupabase().from('news').select('id, title, summary, date, category, read_time as readTime, created_at').order('created_at', { ascending: false });
 }
 
 export async function insertNewsArticle(article: { id: string; title: string; summary: string; date: string; category: string; readTime: string }) {
-  const { error } = await supabase.from('news').insert({
+  const { error } = await ensureSupabase().from('news').insert({
     id: article.id,
     title: article.title,
     summary: article.summary,
@@ -302,7 +309,7 @@ export async function insertMembershipPayment(payment: {
   verificationCode?: string;
   emailVerified?: string;
 }) {
-  const { error } = await supabase.from('memberships').insert({
+  const { error } = await ensureSupabase().from('memberships').insert({
     id: payment.id,
     membership_no: payment.membershipNo,
     plan_id: payment.planId,
@@ -322,26 +329,26 @@ export async function insertMembershipPayment(payment: {
 }
 
 export function getMembershipByNo(membershipNo: string) {
-  return supabase.from('memberships').select('*').eq('membership_no', membershipNo).single();
+  return ensureSupabase().from('memberships').select('*').eq('membership_no', membershipNo).single();
 }
 
 export function getAllMemberships() {
-  return supabase.from('memberships').select('*').order('paid_at', { ascending: false });
+  return ensureSupabase().from('memberships').select('*').order('paid_at', { ascending: false });
 }
 
 export async function verifyMembershipPaymentEmail(id: string, code: string) {
-  const { data, error } = await supabase.from('memberships').select('*').eq('id', id).single();
+  const { data, error } = await ensureSupabase().from('memberships').select('*').eq('id', id).single();
   if (error || !data) return { success: false, error: 'Membership payment not found.' };
   if (data.verification_code !== code) return { success: false, error: 'Invalid verification code.' };
   if (data.email_verified === 'true') return { success: false, error: 'Email is already verified.' };
-  const { error: updateError } = await supabase.from('memberships').update({ email_verified: 'true' }).eq('id', id);
+  const { error: updateError } = await ensureSupabase().from('memberships').update({ email_verified: 'true' }).eq('id', id);
   if (updateError) return { success: false, error: updateError.message };
   return { success: true };
 }
 
 // --- Certificates ---
 export async function insertCertificate(cert: { code: string; userId: string; userName: string; courseId: string; courseTitle: string; issuedAt: string }) {
-  const { error } = await supabase.from('certificates').insert({
+  const { error } = await ensureSupabase().from('certificates').insert({
     code: cert.code,
     user_id: cert.userId,
     user_name: cert.userName,
@@ -353,12 +360,12 @@ export async function insertCertificate(cert: { code: string; userId: string; us
 }
 
 export function getCertificateByCode(code: string) {
-  return supabase.from('certificates').select('*').eq('code', code).single();
+  return ensureSupabase().from('certificates').select('*').eq('code', code).single();
 }
 
 // --- Courses ---
 export function getCourses() {
-  return supabase.from('courses').select('*').order('created_at', { ascending: false });
+  return ensureSupabase().from('courses').select('*').order('created_at', { ascending: false });
 }
 
 export async function insertCourse(course: {
@@ -373,7 +380,7 @@ export async function insertCourse(course: {
   image?: string;
   topics: string[];
 }) {
-  const { error } = await supabase.from('courses').insert({
+  const { error } = await ensureSupabase().from('courses').insert({
     id: course.id,
     title: course.title,
     description: course.description,
@@ -392,12 +399,12 @@ export async function insertCourse(course: {
 }
 
 export function deleteCourse(id: string) {
-  return supabase.from('courses').delete().eq('id', id);
+  return ensureSupabase().from('courses').delete().eq('id', id);
 }
 
 // --- Projects ---
 export function getProjects() {
-  return supabase.from('projects').select('*').order('created_at', { ascending: false });
+  return ensureSupabase().from('projects').select('*').order('created_at', { ascending: false });
 }
 
 export async function insertProject(project: {
@@ -409,7 +416,7 @@ export async function insertProject(project: {
   status: string;
   impact: string;
 }) {
-  const { error } = await supabase.from('projects').insert({
+  const { error } = await ensureSupabase().from('projects').insert({
     id: project.id,
     title: project.title,
     description: project.description,
@@ -423,12 +430,12 @@ export async function insertProject(project: {
 }
 
 export function deleteProject(id: string) {
-  return supabase.from('projects').delete().eq('id', id);
+  return ensureSupabase().from('projects').delete().eq('id', id);
 }
 
 // --- Events ---
 export function getEvents() {
-  return supabase.from('events').select('*').order('created_at', { ascending: false });
+  return ensureSupabase().from('events').select('*').order('created_at', { ascending: false });
 }
 
 export async function insertEvent(event: {
@@ -440,7 +447,7 @@ export async function insertEvent(event: {
   venue: string;
   category: string;
 }) {
-  const { error } = await supabase.from('events').insert({
+  const { error } = await ensureSupabase().from('events').insert({
     id: event.id,
     title: event.title,
     description: event.description,
@@ -454,12 +461,12 @@ export async function insertEvent(event: {
 }
 
 export function deleteEvent(id: string) {
-  return supabase.from('events').delete().eq('id', id);
+  return ensureSupabase().from('events').delete().eq('id', id);
 }
 
 // --- Partners ---
 export function getPartners() {
-  return supabase.from('partners').select('id, name, type, logo_placeholder as logoPlaceholder, created_at').order('created_at', { ascending: false });
+  return ensureSupabase().from('partners').select('id, name, type, logo_placeholder as logoPlaceholder, created_at').order('created_at', { ascending: false });
 }
 
 export async function insertPartner(partner: {
@@ -468,7 +475,7 @@ export async function insertPartner(partner: {
   type: string;
   logoPlaceholder: string;
 }) {
-  const { error } = await supabase.from('partners').insert({
+  const { error } = await ensureSupabase().from('partners').insert({
     id: partner.id,
     name: partner.name,
     type: partner.type,
@@ -479,12 +486,12 @@ export async function insertPartner(partner: {
 }
 
 export function deletePartner(id: string) {
-  return supabase.from('partners').delete().eq('id', id);
+  return ensureSupabase().from('partners').delete().eq('id', id);
 }
 
 // --- Testimonials ---
 export function getTestimonials() {
-  return supabase.from('testimonials').select('id, name, designation, organization, quote, avatar_url as avatarUrl, created_at').order('created_at', { ascending: false });
+  return ensureSupabase().from('testimonials').select('id, name, designation, organization, quote, avatar_url as avatarUrl, created_at').order('created_at', { ascending: false });
 }
 
 export async function insertTestimonial(testimonial: {
@@ -495,7 +502,7 @@ export async function insertTestimonial(testimonial: {
   quote: string;
   avatarUrl: string;
 }) {
-  const { error } = await supabase.from('testimonials').insert({
+  const { error } = await ensureSupabase().from('testimonials').insert({
     id: testimonial.id,
     name: testimonial.name,
     designation: testimonial.designation,
@@ -508,7 +515,7 @@ export async function insertTestimonial(testimonial: {
 }
 
 export function deleteTestimonial(id: string) {
-  return supabase.from('testimonials').delete().eq('id', id);
+  return ensureSupabase().from('testimonials').delete().eq('id', id);
 }
 
 // --- Users ---
@@ -568,7 +575,7 @@ export async function createUser(user: {
   if (user.membershipNo) record.membership_no = user.membershipNo;
 
   while (true) {
-    const { data, error } = await supabase.from('users').insert(record).select('*').single();
+    const { data, error } = await ensureSupabase().from('users').insert(record).select('*').single();
     if (!error) return toPublicUser(data);
 
     const missingOptional = optionalColumns.find((col) =>
@@ -595,7 +602,7 @@ export async function updateUserSafe(userId: string, updates: Record<string, any
   const current = { ...updates };
 
   while (true) {
-    const { data, error } = await supabase.from('users').update(current).eq('id', userId).select('*').single();
+    const { data, error } = await ensureSupabase().from('users').update(current).eq('id', userId).select('*').single();
     if (!error) return data;
 
     const missingOptional = optionalColumns.find((col) =>
@@ -612,7 +619,7 @@ export async function updateUserSafe(userId: string, updates: Record<string, any
 }
 
 export async function getUserByEmail(email: string): Promise<PublicUser | undefined> {
-  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase().trim()).single();
+  const { data, error } = await ensureSupabase().from('users').select('*').eq('email', email.toLowerCase().trim()).single();
   if (error || !data) return undefined;
   return toPublicUser(data);
 }
@@ -647,11 +654,11 @@ export async function verifyCredentials(email: string, password: string): Promis
 }
 
 export async function updateUserPassword(email: string, currentPassword: string, newPassword: string): Promise<boolean> {
-  const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase().trim()).single();
+  const { data, error } = await ensureSupabase().from('users').select('*').eq('email', email.toLowerCase().trim()).single();
   if (error || !data) return false;
   if (!verifyPassword(currentPassword, data.password_hash, data.password_salt)) return false;
   const { hash, salt } = hashPassword(newPassword);
-  const { error: updateError } = await supabase.from('users').update({
+  const { error: updateError } = await ensureSupabase().from('users').update({
     password_hash: hash,
     password_salt: salt
   }).eq('email', email.toLowerCase().trim());
@@ -670,7 +677,7 @@ export async function createSession(userId: string): Promise<{ token: string; ex
   const token = crypto.randomBytes(32).toString('hex');
   const createdAt = new Date();
   const expiresAt = new Date(createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
-  const { error } = await supabase.from('sessions').insert({
+  const { error } = await ensureSupabase().from('sessions').insert({
     token,
     user_id: userId,
     created_at: createdAt.toISOString(),
@@ -701,22 +708,22 @@ export async function getSessionUser(token: string): Promise<PublicUser | null> 
     return null;
   }
 
-  const { data: session, error: sessionError } = await supabase.from('sessions').select('*').eq('token', token).single();
+  const { data: session, error: sessionError } = await ensureSupabase().from('sessions').select('*').eq('token', token).single();
   if (sessionError || !session) return null;
   
   if (new Date(session.expires_at) < new Date()) {
-    await supabase.from('sessions').delete().eq('token', token);
+    await ensureSupabase().from('sessions').delete().eq('token', token);
     return null;
   }
   
-  const { data: user, error: userError } = await supabase.from('users').select('*').eq('id', session.user_id).single();
+  const { data: user, error: userError } = await ensureSupabase().from('users').select('*').eq('id', session.user_id).single();
   if (userError || !user) return null;
   return toPublicUser(user);
 }
 
 export async function deleteSession(token: string) {
   if (!SUPABASE_ENABLED) return;
-  const { error } = await supabase.from('sessions').delete().eq('token', token);
+  const { error } = await ensureSupabase().from('sessions').delete().eq('token', token);
   if (error) console.error('Failed to delete session:', error);
 }
 
@@ -743,7 +750,7 @@ export async function seedDevUser(): Promise<PublicUser> {
     if (!needsRepair) return toPublicUser(target);
 
     const { hash, salt } = hashPassword('vendhan123');
-    let repair = await supabase.from('users').update({
+    let repair = await ensureSupabase().from('users').update({
       role: 'admin',
       password_hash: hash,
       password_salt: salt,
@@ -753,7 +760,7 @@ export async function seedDevUser(): Promise<PublicUser> {
     }).eq('id', target.id).select('*').single();
 
     if (repair.error) {
-      repair = await supabase.from('users').update({
+      repair = await ensureSupabase().from('users').update({
         role: 'admin',
         password_hash: hash,
         password_salt: salt,
@@ -798,11 +805,11 @@ export function verifyPassword(password: string, hash: string, salt: string): bo
 }
 
 export function getAllUsers() {
-  return supabase.from('users').select('*').order('created_at', { ascending: false });
+  return ensureSupabase().from('users').select('*').order('created_at', { ascending: false });
 }
 
 export function getNewsByCursor() {
-  return supabase.from('news').select('*').order('created_at', { ascending: false });
+  return ensureSupabase().from('news').select('*').order('created_at', { ascending: false });
 }
 
 // --- Development Test Reset ---
@@ -820,32 +827,32 @@ export async function resetTestAccount(email: string): Promise<{ success: boolea
 
   try {
     // 1. Delete sessions, certificates, and enrollments for users with this email
-    const { data: userRows } = await supabase.from('users').select('id').eq('email', normalizedEmail);
+    const { data: userRows } = await ensureSupabase().from('users').select('id').eq('email', normalizedEmail);
     if (userRows && userRows.length > 0) {
       const userIds = userRows.map((u: any) => u.id);
-      await supabase.from('sessions').delete().in('user_id', userIds);
-      await supabase.from('certificates').delete().in('user_id', userIds);
-      await supabase.from('enrollments').delete().in('user_id', userIds);
+      await ensureSupabase().from('sessions').delete().in('user_id', userIds);
+      await ensureSupabase().from('certificates').delete().in('user_id', userIds);
+      await ensureSupabase().from('enrollments').delete().in('user_id', userIds);
     }
 
     // 2. Delete the user record itself
-    const { error: userError } = await supabase.from('users').delete().eq('email', normalizedEmail);
+    const { error: userError } = await ensureSupabase().from('users').delete().eq('email', normalizedEmail);
     if (userError && userError.code !== 'PGRST116') throw userError;
     deletedUser = true;
 
     // 3. Delete membership applications
-    const { error: appError } = await supabase.from('applications').delete().eq('email', normalizedEmail);
+    const { error: appError } = await ensureSupabase().from('applications').delete().eq('email', normalizedEmail);
     if (appError && appError.code !== 'PGRST116') throw appError;
     deletedApplication = true;
 
     // 4. Delete enquiries
-    await supabase.from('enquiries').delete().eq('email', normalizedEmail);
+    await ensureSupabase().from('enquiries').delete().eq('email', normalizedEmail);
 
     // 5. Delete event registrations
-    await supabase.from('event_registrations').delete().eq('email', normalizedEmail);
+    await ensureSupabase().from('event_registrations').delete().eq('email', normalizedEmail);
 
     // 6. Delete membership payments
-    await supabase.from('memberships').delete().eq('email', normalizedEmail);
+    await ensureSupabase().from('memberships').delete().eq('email', normalizedEmail);
 
     return { success: true, deletedUser, deletedApplication };
   } catch (err: any) {

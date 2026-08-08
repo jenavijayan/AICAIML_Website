@@ -8,7 +8,11 @@ import { Button, Dialog, DialogHeader, TextField } from './ui';
 import { useFormVerification } from '../hooks/useFormVerification';
 import EmailVerification from './EmailVerification';
 
-export default function MembershipPlans() {
+interface MembershipPlansProps {
+  onJoinPlan?: (plan: MembershipPlan) => void;
+}
+
+export default function MembershipPlans({ onJoinPlan }: MembershipPlansProps) {
   const [activePlan, setActivePlan] = useState<MembershipPlan | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'upi'>('card');
   const [form, setForm] = useState({ name: '', email: '', phone: '', cardNumber: '', expiry: '', cvv: '', upiId: '' });
@@ -135,7 +139,7 @@ export default function MembershipPlans() {
 
             <button
               id={`join-plan-${plan.id}`}
-              onClick={() => setActivePlan(plan)}
+              onClick={() => onJoinPlan?.(plan)}
               className={`w-full text-center py-2.5 text-sm font-bold rounded-lg transition-all ${
                 plan.recommended
                   ? 'bg-accent-sky hover:bg-corp-blue text-white shadow-md'
@@ -158,47 +162,20 @@ export default function MembershipPlans() {
         {activePlan && (
               <>
               {successData ? (
-                <div className="animate-slideup">
-                  <div className="bg-gradient-to-r from-navy to-corp-blue px-6 py-8 text-white text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400 mb-3 ring-4 ring-emerald-500/20">
-                      <CheckCircle className="h-7 w-7" />
-                    </div>
-                    <h2 className="text-lg font-bold font-heading">Payment Successful</h2>
-                    <p className="text-pale-blue text-xs mt-1">{successData.planName} is now active.</p>
+                <div className="animate-slideup text-center space-y-6">
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400 ring-4 ring-emerald-500/20">
+                    <CheckCircle className="h-8 w-8" />
                   </div>
-                  <div className="p-6 space-y-4 overflow-y-auto">
-                    <div className="bg-pale-blue/40 border border-corp-blue/10 rounded-xl p-4 grid grid-cols-2 gap-4 text-xs">
-                      <div>
-                        <span className="block text-slate-500 uppercase font-semibold">Membership No.</span>
-                        <span className="font-mono font-bold text-navy">{successData.membershipNo}</span>
-                      </div>
-                      <div>
-                        <span className="block text-slate-500 uppercase font-semibold">Transaction ID</span>
-                        <span className="font-mono font-bold text-navy">{successData.paymentId}</span>
-                      </div>
-                      <div>
-                        <span className="block text-slate-500 uppercase font-semibold">Amount Paid</span>
-                        <span className="font-bold text-navy">₹{successData.price.toLocaleString('en-IN')}</span>
-                      </div>
-                      <div>
-                        <span className="block text-slate-500 uppercase font-semibold">Payment Method</span>
-                        <span className="font-bold text-navy">{successData.paymentRef}</span>
-                      </div>
-                    </div>
-
-                    <div className="border border-slate-200 rounded-xl overflow-hidden">
-                      <div className="bg-slate-50 px-3 py-2 border-b border-slate-200 flex items-center gap-2 text-[11px] text-slate-600 font-semibold">
-                        <Mail className="w-3.5 h-3.5 text-corp-blue" />
-                        Simulated Confirmation Email
-                      </div>
-                      <div className="p-3 bg-slate-900 text-slate-200 font-mono text-[10px] whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">
-                        {successData.emailLog}
-                      </div>
-                    </div>
-                    <Button onClick={closeModal} className="w-full justify-center">
-                      Done
-                    </Button>
+                  <div className="space-y-2">
+                    <h2 className="text-2xl font-bold font-heading text-navy">Registered Successfully!</h2>
+                    <p className="text-slate-600 text-sm max-w-sm mx-auto">
+                      Your registration has been successfully submitted.<br />
+                      You will receive a confirmation email shortly.
+                    </p>
                   </div>
+                  <Button onClick={closeModal} className="w-full justify-center">
+                    Close
+                  </Button>
                 </div>
               ) : (
                 <>

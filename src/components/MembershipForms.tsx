@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import {
   User, Building, BookOpen, GraduationCap, Server, HelpCircle,
-  CheckCircle, ArrowLeft, Loader2, AlertCircle, Sparkles, Mail, Eye, Upload
+  CheckCircle, ArrowLeft, Loader2, AlertCircle, Sparkles, Eye, Upload
 } from 'lucide-react';
 import { Button } from './ui';
 import { useFormVerification } from '../hooks/useFormVerification';
@@ -221,71 +221,73 @@ export default function MembershipForms({ category, onBack }: FormProps) {
    };
 
    // Submit Handler
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
+   const handleSubmit = async (e: React.FormEvent) => {
+     e.preventDefault();
+     setError(null);
+     setLoading(true);
 
-    const isExempt = commonForm.email.trim().toLowerCase() === EXEMPT_ADMIN_EMAIL;
+     // Client-side Validation Checks (must run before verification gate)
+     if (!commonForm.termsAccepted) {
+       setError('You must accept the terms and conditions before submitting.');
+       setLoading(false);
+       return;
+     }
 
-    if (!verified && !isExempt) {
-      const sent = await requestCode();
-      if (!sent) {
-        setError('Failed to send verification code. Please try again.');
+     if (!commonForm.fullName || commonForm.fullName.trim().length < 2) {
+       setError('Please provide your full name or organization name.');
+       setLoading(false);
+       return;
+     }
+
+     if (!commonForm.email || !commonForm.email.includes('@')) {
+       setError('Please provide a valid email address.');
+       setLoading(false);
+       return;
+     }
+
+     if (!commonForm.mobile || commonForm.mobile.length < 10) {
+       setError('Please provide a valid mobile number (minimum 10 digits).');
+       setLoading(false);
+       return;
+     }
+
+     const isExempt = commonForm.email.trim().toLowerCase() === EXEMPT_ADMIN_EMAIL;
+
+      if (!verified && !isExempt) {
+        const sent = await requestCode();
+        if (!sent) {
+          setError('Failed to send verification code. Please try again.');
+        } else {
+          setError('Please check your email and enter the verification code below, then click Submit Application again.');
+        }
+        setLoading(false);
+        return;
       }
-      setLoading(false);
-      return;
-    }
 
-    // Dynamic extraction of appropriate form payload
-    let payload: any = {};
+      // Dynamic extraction of appropriate form payload
+      let payload: any = {};
 
-    if (category === 'student') {
-      payload = { ...studentForm, provisionalNo };
-    } else if (category === 'msme') {
-      payload = { ...msmeForm, provisionalNo };
-    } else if (category === 'corporate') {
-      payload = { ...corporateForm, provisionalNo };
-    } else if (category === 'school') {
-      payload = { ...schoolForm, provisionalNo };
-    } else if (category === 'university') {
-      payload = { ...universityForm, provisionalNo };
-    }
+      if (category === 'student') {
+        payload = { ...studentForm, provisionalNo };
+      } else if (category === 'msme') {
+        payload = { ...msmeForm, provisionalNo };
+      } else if (category === 'corporate') {
+        payload = { ...corporateForm, provisionalNo };
+      } else if (category === 'school') {
+        payload = { ...schoolForm, provisionalNo };
+      } else if (category === 'university') {
+        payload = { ...universityForm, provisionalNo };
+      }
 
-    payload = {
-      ...payload,
-      ...commonForm,
-      documentName: commonForm.documentFile?.name || commonForm.documentName,
-      provisionalNo
-    };
-    delete payload.documentFile;
+      payload = {
+        ...payload,
+        ...commonForm,
+        documentName: commonForm.documentFile?.name || commonForm.documentName,
+        provisionalNo
+      };
+      delete payload.documentFile;
 
-    // Client-side Validation Checks
-    if (!commonForm.termsAccepted) {
-      setError('You must accept the terms and conditions before submitting.');
-      setLoading(false);
-      return;
-    }
-
-    if (!commonForm.fullName || commonForm.fullName.trim().length < 2) {
-      setError('Please provide your full name or organization name.');
-      setLoading(false);
-      return;
-    }
-
-    if (!commonForm.email || !commonForm.email.includes('@')) {
-      setError('Please provide a valid email address.');
-      setLoading(false);
-      return;
-    }
-
-    if (!commonForm.mobile || commonForm.mobile.length < 10) {
-      setError('Please provide a valid mobile number (minimum 10 digits).');
-      setLoading(false);
-      return;
-    }
-
-    try {
+      try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
@@ -370,24 +372,7 @@ export default function MembershipForms({ category, onBack }: FormProps) {
             </div>
           </div>
 
-          {/* Acknowledgement Email Preview */}
-          <div className="border border-slate-200 rounded-xl overflow-hidden">
-            <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs text-slate-600 font-semibold">
-                <Mail className="w-4 h-4 text-corp-blue" />
-                <span>Simulated Acknowledgement Email (Phase 1 Dispatch log)</span>
-              </div>
-              <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-bold">SENT</span>
-            </div>
-            <div className="p-4 bg-slate-900 text-slate-200 font-mono text-xs whitespace-pre-wrap leading-relaxed overflow-x-auto max-h-72">
-              {successData.emailLog}
-            </div>
-          </div>
-
-          <div className="text-center py-4 space-y-3">
-            <p className="text-xs text-slate-500">
-              Note: Under AICAIML Bylaws, Phase 1 applications do not require immediate fee payment. Your login credentials to access the digital membership portal will be issued upon successful verification.
-            </p>
+          <div className="text-center py-4">
             <Button icon={ArrowLeft} onClick={onBack}>
               Return to Membership Categories
             </Button>

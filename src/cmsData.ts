@@ -42,7 +42,7 @@ export interface Course {
   id: string;
   title: string;
   description: string;
-  category: 'AI Fundamentals' | 'Machine Learning' | 'Robotics' | 'Generative AI' | 'Career & Ethics';
+  category: 'AI Fundamentals' | 'Machine Learning' | 'Robotics' | 'Generative AI';
   level: 'Beginner' | 'Intermediate' | 'Advanced';
   duration: string;
   modules: number;
@@ -298,25 +298,6 @@ export const initialCourses: Course[] = [
     }
   },
   {
-    id: 'course-3',
-    title: 'Responsible AI & Ethics Primer',
-    description: 'A short, free primer on bias, fairness, and accountability in deployed AI systems.',
-    category: 'Career & Ethics',
-    level: 'Beginner',
-    duration: '1.5 hrs',
-    modules: 3,
-    access: 'free',
-    topics: ['Bias in data', 'Fairness metrics', 'Accountability frameworks'],
-    freeContent: {
-      intro: 'A short primer on why ethics is a core engineering concern in AI, not an afterthought — drawing on AICAIML\'s published guidance for practitioners.',
-      lessons: [
-        { title: 'Lesson 1: How Bias Enters a Model', summary: 'Bias usually starts in the training data, not the algorithm — historical inequities get encoded and then automated at scale.' },
-        { title: 'Lesson 2: What "Fairness" Means in Practice', summary: 'There is no single fairness metric — we walk through the trade-offs between competing definitions.' },
-        { title: 'Lesson 3: Building Accountability In', summary: 'Documentation, audits, and human review checkpoints that keep deployed systems answerable.' }
-      ]
-    }
-  },
-  {
     id: 'course-4',
     title: 'Generative AI & Large Language Models',
     description: 'A full-depth course on how LLMs work, prompt engineering, and building applications on top of foundation models.',
@@ -373,35 +354,6 @@ export const initialCourses: Course[] = [
         { question: 'Sensor fusion is primarily used to:', options: ['Reduce hardware cost', 'Combine noisy sensor data into a reliable estimate', 'Increase battery life', 'Replace the need for control loops'], correctIndex: 1 },
         { question: 'In ROS, communication between independent processes happens via:', options: ['Shared global variables', 'Nodes, topics, and services', 'Direct memory access', 'HTTP cookies'], correctIndex: 1 },
         { question: 'A poorly tuned PID controller typically causes a rover to:', options: ['Oscillate or overshoot its target', 'Lose all sensor data', 'Run out of memory', 'Disconnect from Wi-Fi'], correctIndex: 0 }
-      ]
-    }
-  },
-  {
-    id: 'course-6',
-    title: 'AI Career Readiness & Certification Track',
-    description: 'Interview preparation, portfolio review, and the assessment pathway toward an AICAIML-verified professional certificate.',
-    category: 'Career & Ethics',
-    level: 'Intermediate',
-    duration: '6 hrs',
-    modules: 8,
-    access: 'membership',
-    topics: ['Portfolio building', 'Technical interviews', 'Certification exam prep', 'Verified credentialing'],
-    premiumContent: {
-      intro: 'A member-only track focused on turning your technical skills into a hireable portfolio, plus the guided pathway to an AICAIML-verified professional certificate.',
-      lessons: [
-        { title: 'Lesson 1: Building a Portfolio That Gets Noticed', summary: 'What reviewers actually look for in an AI/ML portfolio, and the common gaps that get applications filtered out.' },
-        { title: 'Lesson 2: Technical Interview Preparation', summary: 'Structuring answers to system-design and ML-reasoning questions under time pressure.' },
-        { title: 'Lesson 3: Certification Exam Format', summary: 'What the AICAIML assessment covers, how it is scored, and how to pace yourself through it.' },
-        { title: 'Lesson 4: Verified Credentialing', summary: 'How your certificate is issued, the unique verification code, and how employers can confirm it is genuine.' }
-      ],
-      videoUrl: resolveAssetUrl('/videos/ai-circuit-chip.mp4'),
-      videoTitle: 'Lecture: Structuring a Technical Interview Answer',
-      resourceUrl: resolveAssetUrl('/resources/ai-career-readiness-syllabus.txt'),
-      resourceLabel: 'Full Syllabus & Interview Guide (TXT)',
-      quiz: [
-        { question: 'A strong AI/ML portfolio project should primarily demonstrate:', options: ['Visual design skill', 'Clear problem framing and honest evaluation of results', 'The largest possible dataset used', 'Use of the newest library available'], correctIndex: 1 },
-        { question: 'A verified AICAIML certificate can be confirmed by employers using:', options: ['A unique verification code', 'A phone call to the applicant', 'Social media search', 'None — certificates cannot be verified'], correctIndex: 0 },
-        { question: 'The best way to answer a system-design interview question is usually to:', options: ['Jump straight to code', 'Clarify requirements first, then reason through trade-offs', 'Memorize a fixed template answer', 'Avoid asking any questions'], correctIndex: 1 }
       ]
     }
   }

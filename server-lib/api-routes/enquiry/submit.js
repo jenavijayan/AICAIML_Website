@@ -1,6 +1,7 @@
 import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import { enquiryReceived } from '../../email-templates/index.js';
 
 function parseJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -26,7 +27,7 @@ function parseJsonBody(req) {
   });
 }
 
-async function sendEmail(to, subject, text) {
+async function sendHtmlEmail(to, subject, html, text) {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_USER === 'your-email@gmail.com') {
     return { sent: false };
   }
@@ -35,7 +36,13 @@ async function sendEmail(to, subject, text) {
       service: 'gmail',
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_APP_PASSWORD }
     });
-    await transporter.sendMail({ from: `"AICAIML Council" <${process.env.EMAIL_USER}>`, to, subject, text });
+    await transporter.sendMail({
+      from: `"AICAIML Council" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      text: text || html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim(),
+      html
+    });
     return { sent: true };
   } catch (err) {
     console.error('Failed to send email:', err);
@@ -77,11 +84,12 @@ export default async function handler(req, res) {
     });
     if (error) throw error;
 
+    const htmlBody = enquiryReceived({ name, enquiryId, message });
     const emailBody = `Dear ${name},\n\nThank you for reaching out to the All India Council for Artificial Intelligence and Machine Learning (AICAIML). We have received your enquiry.\n\nA representative from our executive team will review your message and get back to you within 2 business days.\n\nYour Enquiry Details:\nReference ID: ${enquiryId}\nMessage: "${message}"\n\nSincerely,\nExecutive Secretariat,\nAICAIML Council`;
 
-    const { sent } = await sendEmail(email, `[AICAIML] Enquiry Received - Ref No: ${enquiryId}`, emailBody);
+    const { sent } = await sendHtmlEmail(email, `[AICAIML] Enquiry Received - Ref No: ${enquiryId}`, htmlBody, emailBody);
     if (process.env.EMAIL_USER) {
-      await sendEmail(process.env.EMAIL_USER, `[AICAIML Admin] New Enquiry — Ref No: ${enquiryId}`, `A new enquiry was submitted on the Contact page.\n\nName: ${name}\nEmail: ${email}\nPhone: ${phone || '—'}\nReference ID: ${enquiryId}\n\nMessage:\n${message}`);
+      await sendHtmlEmail(process.env.EMAIL_USER, `[AICAIML Admin] New Enquiry — Ref No: ${enquiryId}`, `A new enquiry was submitted on the Contact page.\n\nName: ${name}\nEmail: ${email}\nPhone: ${phone || '—'}\nReference ID: ${enquiryId}\n\nMessage:\n${message}`);
     }
 
     res.json({

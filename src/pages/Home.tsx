@@ -3,13 +3,13 @@ import {
   Shield, ShieldCheck, Brain, Cpu, Network, BookOpen, GraduationCap,
   Award, ChevronRight, ChevronLeft, Users, Check, UserCheck, ArrowRight,
   Sparkles, Target,
-  Building, Server
+  Building, Server, X
 } from 'lucide-react';
 import {
   initialProjects, initialEvents, initialNews, initialTestimonials,
   initialPartners, leadershipMessages, Project, UpcomingEvent, NewsUpdate, Testimonial, Partner, LeadershipMessage
 } from '../cmsData';
-import { Button, IconButton, Card, IconBadge } from '../components/ui';
+import { Button, IconButton, Card, IconBadge, Dialog } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import { resolveAssetUrl } from '../lib/assetPaths';
 
@@ -27,6 +27,7 @@ export default function Home({
   useDocumentMeta();
 
   const [newsList, setNewsList] = useState<NewsUpdate[]>(initialNews);
+  const [selectedNews, setSelectedNews] = useState<NewsUpdate | null>(null);
   const [projectsList, setProjectsList] = useState<Project[]>(initialProjects);
   const [eventsList, setEventsList] = useState<UpcomingEvent[]>(initialEvents);
   const [testimonialsList, setTestimonialsList] = useState<Testimonial[]>(initialTestimonials);
@@ -101,21 +102,26 @@ export default function Home({
   const [testimonialIndex, setTestimonialIndex] = useState(0);
   
   const heroAssets = [
-    { type: 'video' as const, src: resolveAssetUrl('/videos/IMAGE3.mp4'), poster: resolveAssetUrl('/images/IMAGE1.jpg') },
-    { type: 'image' as const, src: resolveAssetUrl('/images/IMAGE1.jpg') },
-    { type: 'image' as const, src: resolveAssetUrl('/images/IMAGE2.jpg') },
-    { type: 'image' as const, src: resolveAssetUrl('/images/hero-poster.jpg') },
+    { type: 'image' as const, src: resolveAssetUrl('/images/HEROSEC1.png') },
+    { type: 'image' as const, src: resolveAssetUrl('/images/HEROSEC2.png') },
+    { type: 'image' as const, src: resolveAssetUrl('/images/HEROSEC3.png') },
+    { type: 'image' as const, src: resolveAssetUrl('/images/HEROSEC4.png') },
   ];
-  const [heroBgIndex, setHeroBgIndex] = useState(0);
+  const [currentIdx, setCurrentIdx] = useState(0);
+
+  useEffect(() => {
+    heroAssets.forEach((asset) => {
+      const img = new window.Image();
+      img.src = asset.src;
+    });
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setHeroBgIndex((prev) => (prev + 1) % heroAssets.length);
+      setCurrentIdx((prev) => (prev + 1) % heroAssets.length);
     }, 5000);
     return () => clearInterval(timer);
   }, []);
-
-  const heroCurrentAsset = heroAssets[heroBgIndex];
 
   const handleNextTestimonial = () => {
     setTestimonialIndex((prev) => (prev + 1) % testimonialsList.length);
@@ -146,31 +152,23 @@ export default function Home({
 
       {/* SECTION 1: HERO BANNER */}
       <section className="relative bg-navy text-white overflow-hidden min-h-[640px] flex items-center py-20">
-        {/* Rotating background: cycles through videos and images */}
+        {/* Rotating background: smooth crossfade between hero images */}
         <div className="absolute inset-0 w-full h-full overflow-hidden">
-          {heroCurrentAsset.type === 'video' ? (
-            <video
-              key={heroBgIndex}
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="auto"
-              poster={heroCurrentAsset.poster}
-              className="absolute inset-0 w-full h-full object-cover animate-fadeIn"
-            >
-              <source src={heroCurrentAsset.src} type="video/mp4" />
-              <img src={heroCurrentAsset.poster} alt="" aria-hidden="true" />
-            </video>
-          ) : (
+          {heroAssets.map((asset, idx) => (
             <img
-              key={heroBgIndex}
-              src={heroCurrentAsset.src}
+              key={idx}
+              src={asset.src}
               alt=""
               aria-hidden="true"
-              className="absolute inset-0 w-full h-full object-cover animate-fadeIn"
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{
+                opacity: idx === currentIdx ? 1 : 0,
+                transition: 'opacity 1000ms ease-in-out',
+                willChange: 'opacity',
+                zIndex: idx === currentIdx ? 1 : 0,
+              }}
             />
-          )}
+          ))}
         </div>
         {/* Dark overlay for text readability */}
         <div className="absolute inset-0 z-[1]" style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}></div>
@@ -827,9 +825,7 @@ export default function Home({
                 </div>
                 <div className="pt-4 flex items-center justify-between text-xs font-bold border-t border-slate-200/60 mt-4">
                   <span className="text-slate-400">{news.readTime}</span>
-                  <button onClick={() => {
-                    alert(`Read detail: ${news.title}\n\nSummary: ${news.summary}`);
-                  }} className="text-corp-blue hover:text-navy flex items-center gap-1">
+                  <button onClick={() => setSelectedNews(news)} className="text-corp-blue hover:text-navy flex items-center gap-1">
                     <span>Read article</span>
                     <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
@@ -837,6 +833,39 @@ export default function Home({
               </Card>
             ))}
           </div>
+
+          <Dialog
+            open={!!selectedNews}
+            onClose={() => setSelectedNews(null)}
+            label="Read article"
+            className="max-w-2xl"
+            noAnimation
+          >
+            {selectedNews && (
+              <div className="flex flex-col max-h-[85vh]">
+                <div className="bg-navy px-6 py-5 flex items-center justify-between flex-shrink-0">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] uppercase text-gold font-bold tracking-wider">{selectedNews.category}</span>
+                    <span className="text-slate-400 text-xs">{selectedNews.date}</span>
+                  </div>
+                  <button
+                    onClick={() => setSelectedNews(null)}
+                    aria-label="Close dialog"
+                    className="text-slate-300 hover:text-white hover:bg-white/10 p-1.5 rounded-md transition-colors"
+                  >
+                    <X className="w-5 h-5" aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="p-6 md:p-8 overflow-y-auto">
+                  <h3 className="text-2xl font-bold text-navy font-heading mb-3">{selectedNews.title}</h3>
+                  <div className="flex items-center gap-3 text-xs text-slate-500 mb-5 pb-5 border-b border-slate-100">
+                    <span>{selectedNews.readTime}</span>
+                  </div>
+                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{selectedNews.summary}</p>
+                </div>
+              </div>
+            )}
+          </Dialog>
         </div>
       </section>
 

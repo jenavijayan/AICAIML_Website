@@ -1,5 +1,6 @@
 import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
 import nodemailer from 'nodemailer';
+import { paymentConfirmation } from '../../email-templates/index.js';
 
 function parseJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -25,7 +26,7 @@ function parseJsonBody(req) {
   });
 }
 
-async function sendEmail(to, subject, text) {
+async function sendHtmlEmail(to, subject, html, text) {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_USER === 'your-email@gmail.com') {
     return { sent: false };
   }
@@ -34,7 +35,13 @@ async function sendEmail(to, subject, text) {
       service: 'gmail',
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_APP_PASSWORD }
     });
-    await transporter.sendMail({ from: `"AICAIML Council" <${process.env.EMAIL_USER}>`, to, subject, text });
+    await transporter.sendMail({
+      from: `"AICAIML Council" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      text: text || html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim(),
+      html
+    });
     return { sent: true };
   } catch (err) {
     console.error('Failed to send email:', err);
@@ -94,11 +101,20 @@ export default async function handler(req, res) {
     if (error) throw error;
 
     const subject = `[AICAIML] Payment Confirmed - ${planName}`;
+    const htmlBody = paymentConfirmation({
+      name,
+      planName,
+      price,
+      paymentId,
+      membershipNo,
+      paymentRef,
+      paidAt
+    });
     const emailBody = `Dear ${name},\n\nYour payment for the AICAIML ${planName} has been received and confirmed.\n\nPAYMENT RECEIPT:\n - Transaction ID: ${paymentId}\n - Membership No: ${membershipNo}\n - Plan: ${planName}\n - Amount Paid: INR ${price} (Annual)\n - Payment Method: ${paymentRef}\n - Date: ${new Date(paidAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nYour membership is now active. Login credentials for the member learning portal will be issued to this email shortly.\n\nWelcome to the AICAIML national network!\n\nSincerely,\nMembership & Treasury Desk, AICAIML Council`;
 
-    const { sent: emailSent } = await sendEmail(email, subject, emailBody);
+    const { sent: emailSent } = await sendHtmlEmail(email, subject, htmlBody, emailBody);
     if (process.env.EMAIL_USER) {
-      await sendEmail(process.env.EMAIL_USER, `[AICAIML Admin] New Membership Payment — ${membershipNo}`, `A new membership payment was received.\n\nName: ${name}\nEmail: ${email}\nPlan: ${planName}\nAmount: INR ${price}\nPayment Method: ${paymentRef}\nMembership No: ${membershipNo}\nTransaction ID: ${paymentId}`);
+      await sendHtmlEmail(process.env.EMAIL_USER, `[AICAIML Admin] New Membership Payment — ${membershipNo}`, `A new membership payment was received.\n\nName: ${name}\nEmail: ${email}\nPlan: ${planName}\nAmount: INR ${price}\nPayment Method: ${paymentRef}\nMembership No: ${membershipNo}\nTransaction ID: ${paymentId}`);
     }
 
     res.json({

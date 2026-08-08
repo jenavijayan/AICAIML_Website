@@ -198,10 +198,6 @@ export default function Contact() {
                         <p className="text-xs text-emerald-700 mt-1">Your query has been recorded. Reference ID: <strong>{success.referenceId}</strong></p>
                       </div>
                     </div>
-
-                    <div className="bg-slate-900 text-slate-200 p-3 rounded font-mono text-[10px] leading-relaxed whitespace-pre-wrap">
-                      {success.emailLog}
-                    </div>
                     <Button variant="ghost" className="w-full justify-center bg-slate-100 hover:bg-slate-200" onClick={() => { setSuccess(null); setForm({ name: '', email: '', phone: '', message: '' }); }}>
                       Submit Another Enquiry
                     </Button>

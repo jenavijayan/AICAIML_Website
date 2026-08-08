@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase';
-import { sendMail } from '../../lib/mailer';
+import { sendHtmlMail } from '../../lib/mailer';
+import { credentialsIssued, passwordReset } from '../../server-lib/email-templates/index.js';
 
 export async function createNotification(notification: {
   id: string;
@@ -62,11 +63,16 @@ export async function sendCredentialsEmail(userId: string, tempPassword: string)
   const { data: user } = await supabase.from('users').select('*').eq('id', userId).single();
   if (!user || !user.email) return;
 
-  await sendMail(
-    user.email,
-    '[AICAIML] Your Member Portal Credentials',
-    `Dear ${user.name},\n\nYour AICAIML member portal account has been created.\n\nUsername: ${user.email}\nTemporary Password: ${tempPassword}\n\nPlease log in at ${process.env.BASE_URL || 'http://localhost:3000'} and change your password immediately.\n\nWelcome to AICAIML!\n\nMembership Board`
-  );
+  const loginUrl = process.env.BASE_URL || process.env.PUBLIC_BASE_URL || process.env.APP_BASE_URL || 'https://aic-aiml.org';
+  const htmlBody = credentialsIssued({
+    name: user.name,
+    username: user.email,
+    tempPassword,
+    loginUrl: `${loginUrl}/login`
+  });
+  const textBody = `Dear ${user.name},\n\nYour AICAIML member portal account has been created.\n\nUsername: ${user.email}\nTemporary Password: ${tempPassword}\n\nPlease log in at ${loginUrl} and change your password immediately.\n\nWelcome to AICAIML!\n\nMembership Board`;
+
+  await sendHtmlMail(user.email, '[AICAIML] Your Member Portal Credentials', htmlBody, textBody);
 
   await createNotification({
     id: 'notif-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
@@ -145,12 +151,11 @@ export async function sendPaymentReminder(userId: string, paymentId: string): Pr
 }
 
 export async function sendPasswordResetEmail(email: string, token: string): Promise<void> {
-  const resetUrl = `${process.env.BASE_URL || 'http://localhost:3000'}/reset-password?token=${token}`;
-  await sendMail(
-    email,
-    '[AICAIML] Password Reset Request',
-    `You requested a password reset. Click the link below to reset your password:\n\n${resetUrl}\n\nIf you did not request this, please ignore this email.\n\nAICAIML Team`
-  );
+  const baseUrl = process.env.BASE_URL || process.env.PUBLIC_BASE_URL || process.env.APP_BASE_URL || 'https://aic-aiml.org';
+  const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+  const htmlBody = passwordReset({ name: 'Member', resetUrl });
+  const textBody = `You requested a password reset. Click the link below to reset your password:\n\n${resetUrl}\n\nIf you did not request this, please ignore this email.\n\nAICAIML Team`;
+  await sendHtmlMail(email, '[AICAIML] Password Reset Request', htmlBody, textBody);
 }
 
 export async function sendSecurityAlert(userId: string, ipAddress: string): Promise<void> {

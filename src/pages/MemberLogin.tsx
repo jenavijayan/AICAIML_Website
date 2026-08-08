@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, ShieldCheck, LogOut } from 'lucide-react';
+import { AlertTriangle, ShieldCheck, LogOut, Mail, Lock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
@@ -80,20 +80,22 @@ declare global {
 export default function MemberLogin({ setCurrentPage, redirectAfterLogin }: MemberLoginProps) {
   useDocumentMeta('Member Portal Login', 'Sign in with your approved Google account to access the AICAIML member portal.');
 
-  const { memberGoogleLogin, logout } = useAuth();
+  const { memberLogin, memberGoogleLogin, logout } = useAuth();
   const buttonRef = useRef<HTMLDivElement | null>(null);
   const gisInitialized = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(false);
   const [memberName, setMemberName] = useState<string | null>(null);
+  const [loginMode, setLoginMode] = useState<'email' | 'google'>('email');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     const container = buttonRef.current;
 
     if (!GOOGLE_CLIENT_ID) {
-      setError('Google Sign-In is not configured. Please contact support.');
       return;
     }
 
@@ -165,6 +167,26 @@ export default function MemberLogin({ setCurrentPage, redirectAfterLogin }: Memb
     }
   };
 
+  const handleEmailPasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await memberLogin(email.trim(), password);
+      if (!result.success) {
+        setError(result.error || 'Invalid email or password.');
+        return;
+      }
+      setMemberName(email);
+      setSignedIn(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {
+      setError('Unable to reach the server. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleGoToDashboard = () => {
     setCurrentPage(redirectAfterLogin || 'member-dashboard');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -207,7 +229,7 @@ export default function MemberLogin({ setCurrentPage, redirectAfterLogin }: Memb
             <ShieldCheck className="w-6 h-6" />
           </div>
           <h1 className="text-2xl font-heading font-bold text-navy">Member Portal Login</h1>
-          <p className="text-xs text-slate-500">Sign in with your approved Google account.</p>
+          <p className="text-xs text-slate-500">Sign in with your registered email and password.</p>
         </div>
 
         {error && (
@@ -217,23 +239,63 @@ export default function MemberLogin({ setCurrentPage, redirectAfterLogin }: Memb
           </div>
         )}
 
-        {loading && (
-          <div className="text-center py-6 text-sm text-slate-500">
-            Verifying your membership...
+        {loading && loginMode === 'email' && (
+          <div className="text-center py-4 text-sm text-slate-500">
+            Verifying your credentials...
           </div>
         )}
 
-        <div className="flex justify-center">
-          <div ref={buttonRef} className="w-full flex justify-center" />
+        {loginMode === 'email' && (
+          <form onSubmit={handleEmailPasswordLogin} className="space-y-4">
+            <div>
+              <label htmlFor="member-email" className="block text-xs font-semibold text-slate-700 mb-1">Registered Email</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                <input
+                  id="member-email"
+                  type="email"
+                  required
+                  placeholder="you@example.com"
+                  className="w-full rounded-md border border-slate-300 pl-9 pr-3 py-2 text-sm focus:border-corp-blue focus:outline-none"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="member-password" className="block text-xs font-semibold text-slate-700 mb-1">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                <input
+                  id="member-password"
+                  type="password"
+                  required
+                  placeholder="Enter your password"
+                  className="w-full rounded-md border border-slate-300 pl-9 pr-3 py-2 text-sm focus:border-corp-blue focus:outline-none"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1">Use the password sent to your email.</p>
+            </div>
+            <Button
+              type="submit"
+              loading={loading}
+              className="w-full justify-center"
+            >
+              Sign In
+            </Button>
+          </form>
+        )}
+
+        <div className="mt-6 text-center">
+          <p className="text-xs text-slate-500 mb-3">Or continue with</p>
+          <div className="flex justify-center">
+            <div ref={buttonRef} className="w-full flex justify-center" />
+          </div>
         </div>
 
         <div className="mt-6 text-center text-xs text-slate-500">
-          By signing in, you agree that your Google account will be matched against
-          AICAIML's approved membership records. No passwords are stored or managed
-          by AICAIML for member sign-in.
-        </div>
-
-        <div className="mt-4 text-center text-xs text-slate-500">
           Not yet a member?{' '}
           <button
             type="button"

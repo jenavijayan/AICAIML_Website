@@ -2,6 +2,7 @@ import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
 import { resetTestAccount } from '../../authFallback.js';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import { applicationReceived } from '../../email-templates/index.js';
 
 function parseJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -27,7 +28,7 @@ function parseJsonBody(req) {
   });
 }
 
-async function sendEmail(to, subject, text) {
+async function sendHtmlEmail(to, subject, html, text) {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_USER === 'your-email@gmail.com') {
     return { sent: false };
   }
@@ -36,7 +37,13 @@ async function sendEmail(to, subject, text) {
       service: 'gmail',
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_APP_PASSWORD }
     });
-    await transporter.sendMail({ from: `"AICAIML Council" <${process.env.EMAIL_USER}>`, to, subject, text });
+    await transporter.sendMail({
+      from: `"AICAIML Council" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      text: text || html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim(),
+      html
+    });
     return { sent: true };
   } catch (err) {
     console.error('Failed to send email:', err);
@@ -137,9 +144,18 @@ export default async function handler(req, res) {
     const subject = `[AICAIML] Membership Application Submitted - No: ${membershipNo}`;
     const emailBody = `Dear ${name},\n\nThank you for applying for AICAIML ${category.toUpperCase()} membership with the All India Council for Artificial Intelligence and Machine Learning.\n\nYour application has been received and logged securely in our Council database.\n\nAPPLICATION SUMMARY:\n - Application ID: ${applicationId}\n - Allocated Membership No. (Pending Verification): ${membershipNo}\n - Category: ${category.toUpperCase()}\n - Submission Date: ${new Date(submittedAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nEMAIL VERIFICATION:\nPlease verify your email address using this code: ${verificationCode}\n\nOur Membership Review Committee will verify the submitted details against academic or organizational registries. This process typically takes 3 to 5 business days. Once verified, we will issue your digital membership certificate and secure member credentials.\n\nWelcome to India's premier AI/ML advancements ecosystem!\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence & Machine Learning (AICAIML)`;
 
-    const { sent: emailSent } = await sendEmail(email, subject, emailBody);
+    const htmlBody = applicationReceived({
+      name,
+      applicationId,
+      membershipNo,
+      category,
+      submissionDate: submittedAt,
+      verificationCode
+    });
+
+    const { sent: emailSent } = await sendHtmlEmail(email, subject, htmlBody, emailBody);
     if (process.env.EMAIL_USER) {
-      await sendEmail(process.env.EMAIL_USER, `[AICAIML Admin] New ${category.toUpperCase()} Membership Application — ${membershipNo}`, `A new ${category} membership application was submitted.\n\nApplicant: ${name}\nEmail: ${email}\nMembership No: ${membershipNo}\nApplication ID: ${applicationId}\nSubmitted: ${submittedAt}`);
+      await sendHtmlEmail(process.env.EMAIL_USER, `[AICAIML Admin] New ${category.toUpperCase()} Membership Application — ${membershipNo}`, `A new ${category} membership application was submitted.\n\nApplicant: ${name}\nEmail: ${email}\nMembership No: ${membershipNo}\nApplication ID: ${applicationId}\nSubmitted: ${submittedAt}`);
     }
 
     res.json({
