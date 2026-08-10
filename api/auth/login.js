@@ -10,8 +10,8 @@ import {
   seedDevUser,
   parseJsonBody,
   hashPassword
-} from '../../authFallback.js';
-import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
+} from '../../server-lib/authFallback.js';
+import { supabase, SUPABASE_ENABLED } from '../../server-lib/supabaseClient.js';
 
 function canAttemptBootstrapAdminRepair(email, password) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
