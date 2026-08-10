@@ -730,7 +730,7 @@ async function handleApproveApplication(req, res, id) {
       approvalDate,
       portalUrl: `${baseUrl}/#member-login`
     });
-    const textBody = `Dear ${name},\n\nCongratulations! Your AICAIML ${membershipType} membership has been approved.\n\nMembership ID: ${memberId}\nApplication ID: ${application.id}\nMembership Type: ${membershipType}\nApproval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nYour membership is now active. To access the member portal, sign in using your approved Google account at: ${baseUrl}/#member-login\n\nNo password is required — member sign-in uses Google Sign-In only.\n\nWelcome to India's premier AI/ML advancements ecosystem!\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence and Machine Learning (AICAIML)`;
+    const textBody = `Dear ${name},\n\nCongratulations! Your AICAIML ${membershipType} membership has been approved.\n\nMembership ID: ${memberId}\nApplication ID: ${application.id}\nMembership Type: ${membershipType}\nApproval Date: ${new Date(approvalDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\nTo access the member portal, sign in using your registered email and the default password: test123\n\nWelcome to India's premier AI/ML advancements ecosystem!\n\nSincerely,\nMembership Board,\nAll India Council for Artificial Intelligence and Machine Learning (AICAIML)`;
 
     let emailSent = false;
     try {
@@ -742,7 +742,7 @@ async function handleApproveApplication(req, res, id) {
         await transporter.sendMail({
           from: `"AICAIML Council" <${process.env.EMAIL_USER}>`,
           to: email,
-          subject: `[AICAIML] Membership Application Approved - ${application.membership_no}`,
+          subject: `[AICAIML] Membership Application Approved - No: ${memberId}`,
           text: textBody,
           html: htmlBody
         });

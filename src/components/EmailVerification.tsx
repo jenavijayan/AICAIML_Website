@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { Mail, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from './ui';
 import { useFormVerification } from '../hooks/useFormVerification';
@@ -26,6 +26,51 @@ export default function EmailVerification({ email, onVerified, disabled, verific
   });
 
   const { step, verificationCode, requestCode, confirmCode, reset, message, setVerificationCode, isConfirming } = verification || localVerification;
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const digits = verificationCode.split('').slice(0, 6);
+
+  const focusInput = useCallback((index: number) => {
+    inputRefs.current[index]?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (step === 'verifying' && verificationCode.length === 6) {
+      confirmCode();
+    }
+  }, [step, verificationCode, confirmCode]);
+
+  useEffect(() => {
+    if (step === 'verifying' && verificationCode.length > 0 && verificationCode.length < 6) {
+      focusInput(verificationCode.length);
+    }
+  }, [step, verificationCode, focusInput]);
+
+  const handleChange = (index: number, value: string) => {
+    const cleaned = value.replace(/\D/g, '').slice(0, 1);
+    const newDigits = [...digits];
+    newDigits[index] = cleaned;
+    const newCode = newDigits.join('').slice(0, 6);
+    setVerificationCode(newCode);
+    if (cleaned && index < 5) {
+      focusInput(index + 1);
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !digits[index] && index > 0) {
+      focusInput(index - 1);
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    setVerificationCode(pasted);
+    if (pasted.length > 0) {
+      focusInput(Math.min(pasted.length, 5));
+    }
+  };
 
   if (step === 'verified') {
     return (
@@ -76,15 +121,24 @@ export default function EmailVerification({ email, onVerified, disabled, verific
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
         <p className="text-xs text-amber-800 font-semibold mb-1">Email Verification Required</p>
         <p className="text-[10px] text-amber-700 mb-2">Enter the 6-digit code sent to {email}</p>
-        <input
-          type="text"
-          maxLength={6}
-          placeholder="Enter 6-digit code"
-          className="w-full text-xs rounded border border-amber-300 p-2 mb-2"
-          value={verificationCode}
-          onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-          required
-        />
+        <div className="flex justify-center gap-2 mb-4">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <input
+              key={index}
+              ref={(el) => { inputRefs.current[index] = el; }}
+              type="text"
+              inputMode="numeric"
+              maxLength={1}
+              placeholder="-"
+              className="w-12 h-14 text-center text-sm rounded-md border border-amber-300 bg-white focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+              value={digits[index] || ''}
+              onChange={(e) => handleChange(index, e.target.value)}
+              onKeyDown={(e) => handleKeyDown(index, e)}
+              onPaste={handlePaste}
+              required
+            />
+          ))}
+        </div>
         <div className="flex gap-2">
           <Button
             type="button"

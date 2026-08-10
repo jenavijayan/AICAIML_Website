@@ -7,25 +7,25 @@ const SITE_URL =
   process.env.APP_BASE_URL ||
   process.env.VITE_APP_BASE_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
-  'https://aic-aiml.org';
+  'https://aicaiml.org';
 
 function normalizeBaseUrl(url) {
-  if (!url) return 'https://aic-aiml.org';
+  if (!url) return 'https://aicaiml.org';
   let input = String(url).trim();
   if (!/^https?:\/\//i.test(input)) {
     input = `https://${input}`;
   }
   try {
     const u = new URL(input);
-    if (u.hostname.toLowerCase() === 'www.aic-aiml.org') {
-      u.hostname = 'aic-aiml.org';
+    if (u.hostname.toLowerCase() === 'www.aicaiml.org') {
+      u.hostname = 'aicaiml.org';
     }
     u.hash = '';
     u.search = '';
     u.pathname = '';
     return u.toString().replace(/\/$/, '');
   } catch {
-    return 'https://aic-aiml.org';
+    return 'https://aicaiml.org';
   }
 }
 
@@ -46,7 +46,7 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-const logoUrl = 'https://aic-aiml-website.vercel.app/images/logo-web.png';
+const logoUrl = 'https://aicaiml-website.vercel.app/assets/logo-web-TPNlqHKk.png';
 
 function buildWrapper(bodyContent, maxWidth = '760px') {
   return `
@@ -112,7 +112,7 @@ function buildWrapper(bodyContent, maxWidth = '760px') {
               <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
                 <tr>
                   <td valign="middle" style="font-family:Arial, Helvetica, sans-serif; font-size:11px; color:#B9C3D4; line-height:1.4; padding-right:12px;">AICAIML &middot; India's premier AI/ML ecosystem</td>
-                  <td valign="middle" align="right" style="font-family:Arial, Helvetica, sans-serif; font-size:11px; color:#B9C3D4; line-height:1.4; padding-left:12px; white-space:nowrap;"><a href="${BASE_URL}" style="color:#D9A936; text-decoration:none; font-weight:bold;">aic-aiml.org</a></td>
+                   <td valign="middle" align="right" style="font-family:Arial, Helvetica, sans-serif; font-size:11px; color:#B9C3D4; line-height:1.4; padding-left:12px; white-space:nowrap;"><a href="${BASE_URL}" style="color:#D9A936; text-decoration:none; font-weight:bold;">aicaiml.org</a></td>
                 </tr>
               </table>
             </td>
@@ -363,7 +363,7 @@ function membershipApproval({ name, membershipNo, applicationId, membershipType,
       { label: 'Approval date', value: formatDate(approvalDate), borderColor: '#E4DDCB' },
       { label: 'Status', value: 'Active', borderColor: '#17A398', badgeBg: '#E4F5EC' }
     ])}
-    ${buildActionCard('Sign in to the member portal', 'Use your approved Google account — no password needed.', 'Go to member login →', portal)}
+    ${buildActionCard('Sign in to the member portal', 'Sign in using your registered email and the default password: test123', 'Go to member login →', portal)}
     <p style="margin:0 0 34px 0; font-family:Arial, Helvetica, sans-serif; font-size:14.5px; line-height:1.7; color:#5B6478;">We're glad to have you on board. Explore the portal for resources, events, and community updates tailored to ${mType.toLowerCase()} members.</p>
     ${FOOTER}
   `;
