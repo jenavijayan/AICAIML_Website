@@ -102,7 +102,7 @@ export default function EventsProjects({ setCurrentPage }: EventsProjectsProps) 
           {/* Projects Card Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {filteredProjects.map((proj) => (
-              <Card key={proj.id} padding="none" interactive className="bg-slate-50 border-slate-200/60 flex flex-col md:flex-row">
+              <Card key={proj.id} padding="none" className="bg-slate-50 border-slate-200/60 flex flex-col md:flex-row">
                 <img
                   src={proj.image}
                   alt={proj.title}
