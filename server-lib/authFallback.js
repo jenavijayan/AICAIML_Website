@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { supabase, SUPABASE_ENABLED } from './supabaseClient.js';
 
-const FALLBACK_AUTH_EMAIL = (process.env.ADMIN_EMAIL || process.env.VITE_ADMIN_EMAIL || 'vendhanftpwatch@gmail.com').trim().toLowerCase();
+const FALLBACK_AUTH_EMAIL = (process.env.ADMIN_EMAIL || 'vendhanftpwatch@gmail.com').trim().toLowerCase();
 const FALLBACK_AUTH_PASSWORD = (process.env.ADMIN_PASSWORD || 'vendhan123').trim();
 const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
 const FALLBACK_AUTH_SECRET = process.env.AUTH_SESSION_SECRET || 'aicaiml-dev-session-secret';
