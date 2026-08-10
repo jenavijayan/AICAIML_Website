@@ -3,15 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/admin/:path*", "destination": "/api/admin.js" },
-    { "source": "/api/auth/:path*", "destination": "/api/auth.js" },
-    { "source": "/api/verification/:path*", "destination": "/api/verification.js" },
-    { "source": "/api/enquiry/:path*", "destination": "/api/verification.js" },
-    { "source": "/api/news", "destination": "/api/public.js" },
-    { "source": "/api/events", "destination": "/api/public.js" },
-    { "source": "/api/partners", "destination": "/api/public.js" },
-    { "source": "/api/projects", "destination": "/api/public.js" },
-    { "source": "/api/testimonials", "destination": "/api/public.js" },
+    { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
