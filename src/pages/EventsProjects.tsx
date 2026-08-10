@@ -163,7 +163,6 @@ export default function EventsProjects({ setCurrentPage }: EventsProjectsProps) 
             {filteredEvents.map((event) => (
               <Card
                 key={event.id}
-                interactive
                 className="hover:border-corp-blue/30 hover:bg-pale-blue/10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
               >
                 <div className="space-y-3 max-w-4xl">
@@ -183,13 +182,9 @@ export default function EventsProjects({ setCurrentPage }: EventsProjectsProps) 
                   id={`btn-reg-interest-page-${event.id}`}
                   variant="accent"
                   onClick={(e) => {
+                    e.stopPropagation();
                     e.preventDefault();
-                    console.log('Register Interest clicked - navigating to contact');
-                    if (typeof setCurrentPage === 'function') {
-                      setCurrentPage('contact');
-                    } else {
-                      window.dispatchEvent(new CustomEvent('nav-contact'));
-                    }
+                    setCurrentPage('contact');
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                   className="w-full md:w-auto shrink-0"
