@@ -1,7 +1,5 @@
 import {
   SESSION_COOKIE,
-  FALLBACK_AUTH_EMAIL,
-  FALLBACK_AUTH_PASSWORD,
   FALLBACK_USER_ID,
   getFallbackUser,
   getSupabaseUser,
@@ -12,6 +10,9 @@ import {
   hashPassword
 } from '../../server-lib/authFallback.js';
 import { supabase, SUPABASE_ENABLED } from '../../server-lib/supabaseClient.js';
+
+const FALLBACK_AUTH_EMAIL = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+const FALLBACK_AUTH_PASSWORD = String(process.env.ADMIN_PASSWORD || '').trim();
 
 function canAttemptBootstrapAdminRepair(email, password) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
