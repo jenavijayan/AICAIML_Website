@@ -22,6 +22,11 @@ const FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:
 export default function Dialog({ open, onClose, label, className = '', children, noAnimation = false }: DialogProps & { noAnimation?: boolean }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -33,7 +38,7 @@ export default function Dialog({ open, onClose, label, className = '', children,
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key === 'Tab' && focusable && focusable.length > 0) {
@@ -54,7 +59,7 @@ export default function Dialog({ open, onClose, label, className = '', children,
       document.removeEventListener('keydown', handleKeyDown);
       triggerRef.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   return (
     <AnimatePresence>
