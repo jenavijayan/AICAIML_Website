@@ -2,7 +2,7 @@ import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Shield, X, CreditCard, Heart, CheckCircle, Mail, AlertCircle,
-  ArrowRight, Info, Copy, Calendar, MapPin, DollarSign, Award, Clock, BookOpen, Loader2
+  ArrowRight, Info, Copy, DollarSign, Award, Clock, BookOpen, Loader2
 } from 'lucide-react';
 
 // Import components and pages
@@ -10,12 +10,9 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import CookieConsent from './components/CookieConsent';
 import MembershipPlans from './components/MembershipPlans';
-import { Button, IconButton, Dialog, DialogHeader, TextField } from './components/ui';
-import EmailVerification from './components/EmailVerification';
+import { Button, IconButton, TextField } from './components/ui';
 
-import { UpcomingEvent } from './cmsData';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { useFormVerification } from './hooks/useFormVerification';
 
 import Home from './pages/Home';
 const KnowAICAIML = lazy(() => import('./pages/KnowAICAIML'));
@@ -63,7 +60,6 @@ function AppShell() {
 
   // Modal States
   const [isDonationOpen, setIsDonationOpen] = useState(false);
-  const [activeRegEvent, setActiveRegEvent] = useState<UpcomingEvent | null>(null);
 
   // Donation interactive state
   const [donationAmount, setDonationAmount] = useState('5000');
@@ -72,83 +68,7 @@ function AppShell() {
   const [donationSuccess, setDonationSuccess] = useState<any | null>(null);
   const [donationForm, setDonationForm] = useState({ name: '', email: '', panNo: '' });
 
-  // Form registration states (inside registration modal)
-  const [regForm, setRegForm] = useState({ name: '', email: '', phone: '', organization: '', designation: '' });
-  const [regHoneypot, setRegHoneypot] = useState('');
-  const [regLoading, setRegLoading] = useState(false);
-  const [regSuccess, setRegSuccess] = useState<any | null>(null);
-  const [regError, setRegError] = useState<string | null>(null);
-
-  const {
-    step: regVerificationStep,
-    verificationCode: regVerificationCode,
-    requestCode: requestRegCode,
-    confirmCode: confirmRegCode,
-    reset: resetRegVerification,
-    message: regVerifyMessage,
-    setVerificationCode: setRegVerificationCode,
-    isConfirming: regIsConfirming
-  } = useFormVerification({
-    email: regForm.email,
-    onVerified: () => {
-      submitEventRegistration();
-    }
-  });
-
-  const submitEventRegistration = async () => {
-    if (!activeRegEvent) return;
-    setRegLoading(true);
-    setRegError(null);
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-      const response = await fetch('/api/events/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          eventId: activeRegEvent.id,
-          eventTitle: activeRegEvent.title,
-          ...regForm,
-          honeypot: regHoneypot
-        }),
-        signal: controller.signal,
-        credentials: 'include'
-      });
-      clearTimeout(timeoutId);
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to submit event registration.');
-      }
-      setRegSuccess(data);
-      setRegForm({ name: '', email: '', phone: '', organization: '', designation: '' });
-      resetRegVerification();
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        setRegError('Request timed out. Please check your connection and try again.');
-      } else {
-        setRegError(err.message || 'An unexpected server error occurred.');
-      }
-    } finally {
-      setRegLoading(false);
-    }
-  };
-
-  // Event Register submit
-  const handleEventRegisterSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeRegEvent) return;
-    setRegError(null);
-    if (regVerificationStep === 'verified') {
-      await submitEventRegistration();
-      return;
-    }
-    const sent = await requestRegCode();
-    if (!sent) {
-      setRegError('Failed to send verification code. Please try again.');
-    }
-  };
-
-  // Donation submit
+  // Donation interactive state
   const handleDonationSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (donationHoneypot) return; // Silent spam fail
@@ -227,12 +147,6 @@ function AppShell() {
     }
   }, [currentPage]);
 
-  useEffect(() => {
-    const handleNav = () => setCurrentPage('contact');
-    window.addEventListener('nav-contact', handleNav);
-    return () => window.removeEventListener('nav-contact', handleNav);
-  }, []);
-
   return (
     <div id="aicaiml-root" className="min-h-screen bg-white flex flex-col font-sans">
 
@@ -259,11 +173,6 @@ function AppShell() {
               <Home 
                 setCurrentPage={setCurrentPage} 
                 setSelectedCategory={setSelectedCategory}
-                onOpenRegisterEventModal={(event) => {
-                  setRegSuccess(null);
-                  setRegError(null);
-                  setActiveRegEvent(event);
-                }}
               />
             )}
 
@@ -556,149 +465,6 @@ function AppShell() {
 
       {/* COOKIE CONSENT BANNER */}
       <CookieConsent onOpenPrivacyPage={() => setCurrentPage('privacy')} />
-
-      {/* ------------------------------------------------------------- */}
-      {/* MODAL 1: EVENT INTEREST REGISTRATION MODAL */}
-      {/* ------------------------------------------------------------- */}
-      <Dialog
-        open={!!activeRegEvent}
-        onClose={() => setActiveRegEvent(null)}
-        label={activeRegEvent ? `Register interest — ${activeRegEvent.title}` : 'Register interest'}
-        className="max-w-lg"
-      >
-        {activeRegEvent && (
-          <>
-            <DialogHeader
-              eyebrow="AICAIML Registration Registry"
-              title={activeRegEvent.title}
-              onClose={() => setActiveRegEvent(null)}
-            />
-
-            {/* Form body */}
-            <div className="p-6 overflow-y-auto space-y-4">
-
-              {regSuccess ? (
-                <div className="space-y-4 animate-slideup">
-                  <div className="flex gap-2.5 items-start">
-                    <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" aria-hidden="true" />
-                    <div>
-                      <h5 className="font-bold text-emerald-900 text-sm">Interest Registered!</h5>
-                      <p className="text-xs text-emerald-700 mt-1">
-                        You have successfully registered interest. Registration Ticket: <strong>{regSuccess.registrationId}</strong>
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-900 text-slate-200 p-3 rounded font-mono text-[10px] leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">
-                    {regSuccess.emailLog}
-                  </div>
-
-                  <Button className="w-full justify-center" onClick={() => { setActiveRegEvent(null); setRegSuccess(null); resetRegVerification(); }}>
-                    Close Modal
-                  </Button>
-                </div>
-              ) : (
-                <form onSubmit={handleEventRegisterSubmit} className="space-y-4">
-                  {regError && (
-                    <div role="alert" className="bg-rose-50 text-rose-800 p-3 rounded text-xs">
-                      {regError}
-                    </div>
-                  )}
-
-                  {/* Honeypot anti-spam check */}
-                  <div className="hidden">
-                    <label htmlFor="event-reg-honeypot">Do not fill if human</label>
-                    <input
-                      id="event-reg-honeypot"
-                      type="text"
-                      value={regHoneypot}
-                      onChange={(e) => setRegHoneypot(e.target.value)}
-                      autoComplete="off"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <span className="block text-slate-400">Event Date</span>
-                      <span className="font-semibold text-navy flex items-center gap-1 mt-0.5"><Calendar className="w-3.5 h-3.5 text-gold" aria-hidden="true" /> {activeRegEvent.date}</span>
-                    </div>
-                    <div>
-                      <span className="block text-slate-400">Venue / Access</span>
-                      <span className="font-semibold text-navy flex items-center gap-1 mt-0.5"><MapPin className="w-3.5 h-3.5 text-gold" aria-hidden="true" /> {activeRegEvent.venue}</span>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-slate-100 pt-4 space-y-3">
-                    <TextField
-                      label="Your Full Name *"
-                      type="text"
-                      required
-                      placeholder="e.g., Anjali Sharma"
-                      autoComplete="name"
-                      value={regForm.name}
-                      onChange={(e) => setRegForm({ ...regForm, name: e.target.value })}
-                    />
-                    <TextField
-                      label="Your Email ID *"
-                      type="email"
-                      required
-                      placeholder="anjali@domain.com"
-                      autoComplete="email"
-                      value={regForm.email}
-                      onChange={(e) => setRegForm({ ...regForm, email: e.target.value })}
-                    />
-                    <div className="grid grid-cols-2 gap-3">
-                      <TextField
-                        label="Organization / Inst Name"
-                        type="text"
-                        placeholder="e.g., IIT Delhi"
-                        value={regForm.organization}
-                        onChange={(e) => setRegForm({ ...regForm, organization: e.target.value })}
-                      />
-                      <TextField
-                        label="Designation"
-                        type="text"
-                        placeholder="e.g., Student, Lecturer"
-                        value={regForm.designation}
-                        onChange={(e) => setRegForm({ ...regForm, designation: e.target.value })}
-                      />
-                    </div>
-                  </div>
-
-                  <EmailVerification
-                    email={regForm.email}
-                    disabled={regLoading}
-                    verification={{
-                      step: regVerificationStep,
-                      verificationCode: regVerificationCode,
-                      requestCode: requestRegCode,
-                      confirmCode: confirmRegCode,
-                      reset: resetRegVerification,
-                      message: regVerifyMessage,
-                      setVerificationCode: setRegVerificationCode,
-                      isConfirming: regIsConfirming
-                    }}
-                  />
-
-                  <p className="text-[10px] text-slate-400">
-                    * Registering interest alerts the events coordination desk. Seat allocations and virtual links will be emailed 24 hours prior.
-                  </p>
-
-                  <div className="pt-2 flex justify-end gap-2.5">
-                    <Button type="button" variant="outline" size="sm" onClick={() => setActiveRegEvent(null)}>
-                      Cancel
-                    </Button>
-                    <Button type="submit" variant="accent" size="sm" loading={regLoading} className="min-w-[120px]" disabled={regVerificationStep !== 'verified'}>
-                      {regLoading ? 'Registering...' : regVerificationStep === 'verified' ? 'Register Ticket' : 'Verify Email First'}
-                    </Button>
-                  </div>
-                </form>
-              )}
-
-            </div>
-          </>
-        )}
-      </Dialog>
 
       {/* ------------------------------------------------------------- */}
       {/* MODAL 2: DONATION COMPLIANCE & BANK DETAILS MODAL */}
