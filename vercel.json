@@ -3,9 +3,14 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/admin/applications/:id/:action", "destination": "/api/admin/[...path]?path=applications&path=:id&path=:action" },
-    { "source": "/api/admin/:path*", "destination": "/api/admin/[...path]" },
-    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/api/admin/:path*", "destination": "/api/admin/[[...path]]" },
+    { "source": "/api/auth/:path*", "destination": "/api/auth/[[...path]]" },
+    { "source": "/api/verification/:path*", "destination": "/api/verification/[[...path]]" },
+    { "source": "/api/news", "destination": "/api/public/[[...path]]?path=news" },
+    { "source": "/api/events", "destination": "/api/public/[[...path]]?path=events" },
+    { "source": "/api/partners", "destination": "/api/public/[[...path]]?path=partners" },
+    { "source": "/api/projects", "destination": "/api/public/[[...path]]?path=projects" },
+    { "source": "/api/testimonials", "destination": "/api/public/[[...path]]?path=testimonials" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

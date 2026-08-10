@@ -8,8 +8,8 @@ import {
   seedDevUser,
   parseJsonBody,
   hashPassword
-} from '../../server-lib/authFallback.js';
-import { supabase, SUPABASE_ENABLED } from '../../server-lib/supabaseClient.js';
+} from '../../authFallback.js';
+import { supabase, SUPABASE_ENABLED } from '../../supabaseClient.js';
 
 const FALLBACK_AUTH_EMAIL = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
 const FALLBACK_AUTH_PASSWORD = String(process.env.ADMIN_PASSWORD || '').trim();
@@ -99,8 +99,6 @@ export default async function handler(req, res) {
 
     let user = await getSupabaseUser(email, password);
     if (!user) {
-      // If the deployment has Supabase enabled but the default admin row was
-      // never seeded, try a one-time seed and retry before failing auth.
       await seedDevUser();
       user = await getSupabaseUser(email, password);
     }
@@ -114,8 +112,6 @@ export default async function handler(req, res) {
       user = getFallbackUser(email, password);
     }
     if (!user && canAttemptBootstrapAdminRepair(email, password)) {
-      // Break-glass path for deployments where database auth state is inconsistent.
-      // This is restricted to the configured bootstrap admin credentials only.
       user = buildBootstrapAdminUser();
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toUTCString();
       const token = createSignedSessionToken(user);
@@ -135,4 +131,4 @@ export default async function handler(req, res) {
     console.error('Login error:', error);
     return res.status(500).json({ error: 'Unable to process login request.' });
   }
-};
+}
