@@ -314,10 +314,11 @@ function AppShell() {
             {currentPage === 'events-projects' && (
               <Suspense fallback={<RouteFallback />}>
                 <EventsProjects 
-                  onOpenRegisterEventModal={(event) => {
+                  onNavigateToContact={() => {
                     setRegSuccess(null);
                     setRegError(null);
-                    setActiveRegEvent(event);
+                    setCurrentPage('contact');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                 />
               </Suspense>

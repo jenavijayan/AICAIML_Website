@@ -7,10 +7,10 @@ import { Button, Card } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 
 interface EventsProjectsProps {
-  onOpenRegisterEventModal: (event: UpcomingEvent) => void;
+  onNavigateToContact: () => void;
 }
 
-export default function EventsProjects({ onOpenRegisterEventModal }: EventsProjectsProps) {
+export default function EventsProjects({ onNavigateToContact }: EventsProjectsProps) {
   useDocumentMeta(
     'Projects & Events',
     'AICAIML national initiatives and upcoming conferences, workshops, and hackathons in AI, Machine Learning, and Robotics.'
@@ -182,7 +182,10 @@ export default function EventsProjects({ onOpenRegisterEventModal }: EventsProje
                 <Button
                   id={`btn-reg-interest-page-${event.id}`}
                   variant="accent"
-                  onClick={() => onOpenRegisterEventModal(event)}
+                  onClick={() => {
+                    onNavigateToContact();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                   className="w-full md:w-auto shrink-0"
                 >
                   Register Interest
