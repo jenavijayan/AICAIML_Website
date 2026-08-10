@@ -314,12 +314,7 @@ function AppShell() {
             {currentPage === 'events-projects' && (
               <Suspense fallback={<RouteFallback />}>
                 <EventsProjects 
-                  onNavigateToContact={() => {
-                    setRegSuccess(null);
-                    setRegError(null);
-                    setCurrentPage('contact');
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
+                  setCurrentPage={setCurrentPage}
                 />
               </Suspense>
             )}

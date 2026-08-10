@@ -7,10 +7,10 @@ import { Button, Card } from '../components/ui';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 
 interface EventsProjectsProps {
-  onNavigateToContact: () => void;
+  setCurrentPage: (page: string) => void;
 }
 
-export default function EventsProjects({ onNavigateToContact }: EventsProjectsProps) {
+export default function EventsProjects({ setCurrentPage }: EventsProjectsProps) {
   useDocumentMeta(
     'Projects & Events',
     'AICAIML national initiatives and upcoming conferences, workshops, and hackathons in AI, Machine Learning, and Robotics.'
@@ -183,8 +183,10 @@ export default function EventsProjects({ onNavigateToContact }: EventsProjectsPr
                   id={`btn-reg-interest-page-${event.id}`}
                   variant="accent"
                   onClick={() => {
-                    onNavigateToContact();
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    if (typeof setCurrentPage === 'function') {
+                      setCurrentPage('contact');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
                   }}
                   className="w-full md:w-auto shrink-0"
                 >
