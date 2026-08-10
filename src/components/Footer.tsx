@@ -150,7 +150,7 @@ export default function Footer({ setCurrentPage }: FooterProps) {
               <li className="flex items-center gap-3">
                 <Mail className="w-5 h-5 text-gold shrink-0" />
                 <a href="mailto:director@aicaiml.org" className="hover:text-gold transition-colors">
-                  info@aicaiml.org
+                  director@aicaiml.org
                 </a>
               </li>
             </ul>

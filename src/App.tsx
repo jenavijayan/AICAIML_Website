@@ -227,6 +227,12 @@ function AppShell() {
     }
   }, [currentPage]);
 
+  useEffect(() => {
+    const handleNav = () => setCurrentPage('contact');
+    window.addEventListener('nav-contact', handleNav);
+    return () => window.removeEventListener('nav-contact', handleNav);
+  }, []);
+
   return (
     <div id="aicaiml-root" className="min-h-screen bg-white flex flex-col font-sans">
 

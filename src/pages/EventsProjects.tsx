@@ -182,11 +182,15 @@ export default function EventsProjects({ setCurrentPage }: EventsProjectsProps) 
                 <Button
                   id={`btn-reg-interest-page-${event.id}`}
                   variant="accent"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.preventDefault();
+                    console.log('Register Interest clicked - navigating to contact');
                     if (typeof setCurrentPage === 'function') {
                       setCurrentPage('contact');
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    } else {
+                      window.dispatchEvent(new CustomEvent('nav-contact'));
                     }
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                   className="w-full md:w-auto shrink-0"
                 >
