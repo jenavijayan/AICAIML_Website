@@ -46,7 +46,7 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-const logoUrl = `${BASE_URL}/assets/logo-web-TPNlqHKk.png`;
+const logoUrl = 'https://aic-aiml-website.vercel.app/images/logo-web.png';
 
 function buildWrapper(bodyContent, maxWidth = '760px') {
   return `

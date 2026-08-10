@@ -5,6 +5,7 @@
   "rewrites": [
     { "source": "/api/admin/applications/:id/:action", "destination": "/api/admin/[...path]?path=applications&path=:id&path=:action" },
     { "source": "/api/admin/:path*", "destination": "/api/admin/[...path]" },
+    { "source": "/api/auth/member/dashboard", "destination": "/api/auth/member/dashboard" },
     { "source": "/api/auth/member/login", "destination": "/api/auth/member/login" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
