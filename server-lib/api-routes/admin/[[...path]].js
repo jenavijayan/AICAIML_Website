@@ -386,6 +386,7 @@ async function generateMembershipId(logStep) {
 
 async function ensureMemberUser({ name, email, membershipId }, logStep) {
   const mutation = { created: false, userId: null, previousUser: null };
+  const { hash: passwordHash, salt: passwordSalt } = hashPassword('test123');
 
   let existingUser = await findUserByEmailCompat(email, logStep);
   logStep?.('query.users.by_email.result', { found: Boolean(existingUser), selectedUserId: existingUser?.id || null });
@@ -405,10 +406,12 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
         membership_plan: null,
         membership_status: 'active',
         permissions: '[]',
+        password_hash: passwordHash,
+        password_salt: passwordSalt,
         created_at: now,
         updated_at: now
       },
-      ['membership_no', 'membership_plan', 'updated_at'],
+      ['membership_no', 'membership_plan', 'password_hash', 'password_salt', 'updated_at'],
       logStep
     );
 
@@ -424,9 +427,11 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
           membership_no: membershipId,
           membership_status: 'active',
           permissions: '[]',
+          password_hash: passwordHash,
+          password_salt: passwordSalt,
           created_at: now
         },
-        ['membership_no'],
+        ['membership_no', 'password_hash', 'password_salt'],
         logStep
       );
     }
@@ -467,6 +472,8 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
       membership_no: existingUser.membership_no,
       membership_status: existingUser.membership_status,
       name: existingUser.name,
+      password_hash: existingUser.password_hash,
+      password_salt: existingUser.password_salt,
       updated_at: existingUser.updated_at
     };
 
@@ -479,9 +486,11 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
         membership_no: existingUser.membership_no || membershipId,
         membership_status: 'active',
         name: existingUser.name || name,
+        password_hash: passwordHash,
+        password_salt: passwordSalt,
         updated_at: new Date().toISOString()
       },
-      ['membership_no', 'updated_at'],
+      ['membership_no', 'password_hash', 'password_salt', 'updated_at'],
       logStep
     );
 
@@ -493,9 +502,11 @@ async function ensureMemberUser({ name, email, membershipId }, logStep) {
           role: 'member',
           membership_no: existingUser.membership_no || membershipId,
           membership_status: 'active',
-          name: existingUser.name || name
+          name: existingUser.name || name,
+          password_hash: passwordHash,
+          password_salt: passwordSalt
         },
-        ['membership_no'],
+        ['membership_no', 'password_hash', 'password_salt'],
         logStep
       );
     }
