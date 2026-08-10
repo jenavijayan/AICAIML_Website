@@ -4,7 +4,9 @@
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api/admin/:path*", "destination": "/api/admin/[[...path]]" },
+    { "source": "/api/auth/member/:path*", "destination": "/api/auth/[[...path]]?path=member&path=:path" },
     { "source": "/api/auth/:path*", "destination": "/api/auth/[[...path]]" },
+    { "source": "/api/enquiry/:path*", "destination": "/api/public/[[...path]]?path=enquiry&path=:path" },
     { "source": "/api/verification/:path*", "destination": "/api/verification/[[...path]]" },
     { "source": "/api/news", "destination": "/api/public/[[...path]]?path=news" },
     { "source": "/api/events", "destination": "/api/public/[[...path]]?path=events" },
