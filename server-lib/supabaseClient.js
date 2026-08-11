@@ -15,7 +15,11 @@ if (SUPABASE_ENABLED) {
   supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
     auth: {
       persistSession: false,
-      autoRefreshToken: false
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    },
+    realtime: {
+      enabled: false
     }
   });
 }

@@ -179,15 +179,14 @@ export default function EventsProjects({ setCurrentPage }: EventsProjectsProps) 
                   <p className="text-sm text-slate-600 leading-relaxed">{event.description}</p>
                 </div>
                 <Button
-                  id={`btn-reg-interest-page-${event.id}`}
                   variant="accent"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    console.log('Navigating to contact...');
                     setCurrentPage('contact');
-                    window.scrollTo(0, 0);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
-                  className="w-full md:w-auto shrink-0"
                 >
                   Register Interest
                 </Button>
