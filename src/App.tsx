@@ -87,6 +87,14 @@ function AppShell() {
     }
   }, [currentPage]);
 
+  useEffect(() => {
+    const handleNav = (e: any) => {
+      if (e.detail && e.detail.page) setCurrentPage(e.detail.page);
+    };
+    window.addEventListener('force-nav', handleNav);
+    return () => window.removeEventListener('force-nav', handleNav);
+  }, []);
+
   return (
     <div id="aicaiml-root" className="min-h-screen bg-white flex flex-col font-sans">
 

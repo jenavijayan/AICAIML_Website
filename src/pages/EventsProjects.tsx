@@ -183,8 +183,7 @@ export default function EventsProjects({ setCurrentPage }: EventsProjectsProps) 
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log('Navigating to contact...');
-                    setCurrentPage('contact');
+                    window.dispatchEvent(new CustomEvent('force-nav', { detail: { page: 'contact' } }));
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                 >
