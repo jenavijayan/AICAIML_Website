@@ -9,10 +9,13 @@ import verifyConfirmHandler from '../server-lib/api-routes/verification/confirm.
 
 export default async function handler(req, res) {
   try {
-    console.log('Master API Request:', req.method, req.url);
     const url = req.url.split('?')[0];
     
-    // Explicit Routing to prevent 404s/500s
+    // Check if ENV is loaded
+    if (!process.env.SUPABASE_URL) {
+       console.error('CRITICAL: SUPABASE_URL is missing in production');
+    }
+
     if (url === '/api/auth/login') return loginHandler(req, res);
     if (url === '/api/auth/member/login') return memberLoginHandler(req, res);
     if (url === '/api/auth/me') return meHandler(req, res);
@@ -27,10 +30,9 @@ export default async function handler(req, res) {
        return adminHandler(req, res);
     }
 
-    // Fallback for CMS data (News, Events, etc.) handled by admin logic
-    return adminHandler(req, res); 
-
+    return adminHandler(req, res); // Catch-all for data tables
   } catch (err) {
-    return res.status(500).json({ error: 'Master Controller Crash', details: err.message });
+    console.error('Master Controller Crash:', err);
+    return res.status(500).json({ error: 'Server Crash', message: err.message });
   }
 }
