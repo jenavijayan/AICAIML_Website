@@ -16,28 +16,33 @@ import projectsHandler from '../server-lib/api-routes/projects.js';
 import coursesHandler from '../server-lib/api-routes/courses.js';
 
 export default async function handler(req, res) {
-  const url = req.url.split('?')[0]; 
-  
-  if (url === '/api/auth/login') return loginHandler(req, res);
-  if (url === '/api/auth/member/login') return memberLoginHandler(req, res);
-  if (url === '/api/auth/me') return meHandler(req, res);
-  if (url === '/api/auth/logout') return logoutHandler(req, res);
-  if (url === '/api/auth/member/dashboard') return memberDashboardHandler(req, res);
-  if (url === '/api/verification/request') return verifyRequestHandler(req, res);
-  if (url === '/api/verification/confirm') return verifyConfirmHandler(req, res);
-  if (url === '/api/enquiry/submit') return enquiryHandler(req, res);
-  if (url === '/api/membership/submit') return membershipHandler(req, res);
-  if (url === '/api/news') return newsHandler(req, res);
-  if (url === '/api/events') return eventsHandler(req, res);
-  if (url === '/api/partners') return partnersHandler(req, res);
-  if (url === '/api/testimonials') return testimonialsHandler(req, res);
-  if (url === '/api/projects') return projectsHandler(req, res);
-  if (url === '/api/courses') return coursesHandler(req, res);
+  try {
+    const url = req.url.split('?')[0]; 
+    
+    if (url === '/api/auth/login') return loginHandler(req, res);
+    if (url === '/api/auth/member/login') return memberLoginHandler(req, res);
+    if (url === '/api/auth/me') return meHandler(req, res);
+    if (url === '/api/auth/logout') return logoutHandler(req, res);
+    if (url === '/api/auth/member/dashboard') return memberDashboardHandler(req, res);
+    if (url === '/api/verification/request') return verifyRequestHandler(req, res);
+    if (url === '/api/verification/confirm') return verifyConfirmHandler(req, res);
+    if (url === '/api/enquiry/submit') return enquiryHandler(req, res);
+    if (url === '/api/membership/submit') return membershipHandler(req, res);
+    if (url === '/api/news') return newsHandler(req, res);
+    if (url === '/api/events') return eventsHandler(req, res);
+    if (url === '/api/partners') return partnersHandler(req, res);
+    if (url === '/api/testimonials') return testimonialsHandler(req, res);
+    if (url === '/api/projects') return projectsHandler(req, res);
+    if (url === '/api/courses') return coursesHandler(req, res);
 
-  if (url.startsWith('/api/admin')) {
-    const segments = url.replace('/api/admin/', '').split('/').filter(Boolean);
-    req.query.path = segments;
-    return adminHandler(req, res);
+    if (url.startsWith('/api/admin')) {
+      const segments = url.replace('/api/admin/', '').split('/').filter(Boolean);
+      req.query.path = segments;
+      return adminHandler(req, res);
+    }
+    return res.status(404).json({ error: 'Endpoint not mapped', path: url });
+  } catch (err) {
+    console.error('Master API controller error:', err);
+    return res.status(500).json({ error: err.message || 'Internal server error' });
   }
-  return res.status(404).json({ error: 'Endpoint not mapped', path: url });
 }

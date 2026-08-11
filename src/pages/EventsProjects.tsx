@@ -182,10 +182,12 @@ export default function EventsProjects({ setCurrentPage }: EventsProjectsProps) 
                   id={`btn-reg-interest-page-${event.id}`}
                   variant="accent"
                   onClick={(e) => {
-                    e.stopPropagation();
                     e.preventDefault();
-                    setCurrentPage('contact');
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    e.stopPropagation();
+                    if (typeof setCurrentPage === 'function') {
+                      setCurrentPage('contact');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
                   }}
                   className="w-full md:w-auto shrink-0"
                 >
