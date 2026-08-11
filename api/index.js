@@ -9,6 +9,7 @@ import verifyConfirmHandler from '../server-lib/api-routes/verification/confirm.
 
 export default async function handler(req, res) {
   try {
+    console.log('Master API Request:', req.method, req.url);
     const url = req.url.split('?')[0];
     
     // Explicit Routing to prevent 404s/500s

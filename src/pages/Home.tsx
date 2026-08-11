@@ -16,13 +16,11 @@ import { resolveAssetUrl } from '../lib/assetPaths';
 interface HomeProps {
   setCurrentPage: (page: string) => void;
   setSelectedCategory: (cat: 'student' | 'msme' | 'corporate' | 'school' | 'university' | null) => void;
-  onOpenRegisterEventModal: (event: UpcomingEvent) => void;
 }
 
 export default function Home({
   setCurrentPage,
-  setSelectedCategory,
-  onOpenRegisterEventModal
+  setSelectedCategory
 }: HomeProps) {
   useDocumentMeta();
 
@@ -546,14 +544,6 @@ export default function Home({
                   <h4 className="text-xl font-bold font-heading text-white">{event.title}</h4>
                   <p className="text-sm text-slate-300 leading-relaxed">{event.description}</p>
                 </div>
-                <Button
-                  id={`btn-reg-interest-${event.id}`}
-                  variant="accent"
-                  className="w-full md:w-auto shrink-0"
-                  onClick={() => onOpenRegisterEventModal(event)}
-                >
-                  Register Interest
-                </Button>
               </div>
             ))}
           </div>
