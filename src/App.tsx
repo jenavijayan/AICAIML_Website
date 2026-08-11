@@ -404,7 +404,7 @@ function AppShell() {
       <Footer setCurrentPage={setCurrentPage} />
 
       {/* COOKIE CONSENT BANNER */}
-      <CookieConsent onOpenPrivacyPage={() => setCurrentPage('privacy') />
+      <CookieConsent onOpenPrivacyPage={() => setCurrentPage('privacy')} />
 
     </div>
   );
