@@ -9,7 +9,11 @@ import EmailVerification from '../components/EmailVerification';
 
 const EXEMPT_ADMIN_EMAIL = 'vendhanftpwatch@gmail.com';
 
-export default function Contact() {
+interface ContactProps {
+  setCurrentPage: (page: string) => void;
+}
+
+export default function Contact({ setCurrentPage }: ContactProps) {
   useDocumentMeta('Contact', 'Reach the AICAIML Executive Secretariat for course support, institutional registrations, or general enquiries.');
   const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' });
   const [honeypot, setHoneypot] = useState('');

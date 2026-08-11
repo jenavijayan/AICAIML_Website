@@ -184,10 +184,8 @@ export default function EventsProjects({ setCurrentPage }: EventsProjectsProps) 
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (typeof setCurrentPage === 'function') {
-                      setCurrentPage('contact');
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }
+                    setCurrentPage('contact');
+                    window.scrollTo(0, 0);
                   }}
                   className="w-full md:w-auto shrink-0"
                 >

@@ -116,23 +116,23 @@ function AppShell() {
               />
             )}
 
-            {currentPage === 'know-aicaiml' && (
-              <Suspense fallback={<RouteFallback />}>
-                <KnowAICAIML />
-              </Suspense>
-            )}
+             {currentPage === 'know-aicaiml' && (
+               <Suspense fallback={<RouteFallback />}>
+                 <KnowAICAIML setCurrentPage={setCurrentPage} />
+               </Suspense>
+             )}
 
-            {currentPage === 'verification' && (
-              <Suspense fallback={<RouteFallback />}>
-                <Verification />
-              </Suspense>
-            )}
+             {currentPage === 'verification' && (
+               <Suspense fallback={<RouteFallback />}>
+                 <Verification />
+               </Suspense>
+             )}
 
-            {currentPage === 'contact' && (
-              <Suspense fallback={<RouteFallback />}>
-                <Contact />
-              </Suspense>
-            )}
+             {currentPage === 'contact' && (
+               <Suspense fallback={<RouteFallback />}>
+                 <Contact setCurrentPage={setCurrentPage} />
+               </Suspense>
+             )}
 
             {currentPage === 'courses' && (
               <Suspense fallback={<RouteFallback />}>
@@ -160,11 +160,11 @@ function AppShell() {
               </Suspense>
             )}
 
-            {currentPage === 'learners' && (
-              <Suspense fallback={<RouteFallback />}>
-                <Learners />
-              </Suspense>
-            )}
+             {currentPage === 'learners' && (
+               <Suspense fallback={<RouteFallback />}>
+                 <Learners />
+               </Suspense>
+             )}
 
             {currentPage === 'events-projects' && (
               <Suspense fallback={<RouteFallback />}>
@@ -368,11 +368,11 @@ function AppShell() {
               </div>
             )}
 
-             {currentPage === 'admin' && user?.role === 'admin' && (
-               <Suspense fallback={<RouteFallback />}>
-                 <AdminDashboard />
-               </Suspense>
-              )}
+              {currentPage === 'admin' && user?.role === 'admin' && (
+                <Suspense fallback={<RouteFallback />}>
+                  <AdminDashboard />
+                </Suspense>
+               )}
 
              {currentPage === 'admin' && !user?.role && (
                <Suspense fallback={<RouteFallback />}>

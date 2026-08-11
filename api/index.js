@@ -17,6 +17,8 @@ import coursesHandler from '../server-lib/api-routes/courses.js';
 
 export default async function handler(req, res) {
   try {
+    console.log('API Request:', req.url);
+
     const url = req.url.split('?')[0]; 
     
     if (url === '/api/auth/login') return loginHandler(req, res);
@@ -36,8 +38,8 @@ export default async function handler(req, res) {
     if (url === '/api/courses') return coursesHandler(req, res);
 
     if (url.startsWith('/api/admin')) {
-      const segments = url.replace('/api/admin/', '').split('/').filter(Boolean);
-      req.query.path = segments;
+      const parts = url.split('/').filter(Boolean);
+      req.query.path = parts.slice(2);
       return adminHandler(req, res);
     }
     return res.status(404).json({ error: 'Endpoint not mapped', path: url });

@@ -1,7 +1,11 @@
 import { Target, Compass, Shield, ShieldCheck, Heart, Sparkles, CheckCircle } from 'lucide-react';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 
-export default function KnowAICAIML() {
+interface KnowAICAIMLProps {
+  setCurrentPage: (page: string) => void;
+}
+
+export default function KnowAICAIML({ setCurrentPage }: KnowAICAIMLProps) {
   useDocumentMeta(
     'About AICAIML',
     "AICAIML's vision, mission, and national commitments — India's council for accessible AI, Machine Learning, and Robotics education."
