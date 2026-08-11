@@ -36,7 +36,7 @@ export default async function handler(req, res) {
     if (url === '/api/courses') return coursesHandler(req, res);
 
     if (url.startsWith('/api/admin')) {
-      const segments = url.replace('/api/admin', '').split('/').filter(Boolean);
+      const segments = url.split('/').filter(val => val && val !== 'api' && val !== 'admin');
       req.query.path = segments;
       return adminHandler(req, res);
     }
