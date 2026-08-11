@@ -163,9 +163,9 @@ export default function EventsProjects({ setCurrentPage }: EventsProjectsProps) 
             {filteredEvents.map((event) => (
               <Card
                 key={event.id}
-                className="hover:border-corp-blue/30 hover:bg-pale-blue/10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
+                className="hover:border-corp-blue/30 hover:bg-pale-blue/10 flex flex-col gap-4"
               >
-                <div className="space-y-3 max-w-4xl">
+                <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-3 text-xs">
                     <span className="inline-flex items-center gap-1 text-gold font-bold uppercase tracking-wider">{event.category}</span>
                     <span className="text-slate-300">|</span>
@@ -178,17 +178,6 @@ export default function EventsProjects({ setCurrentPage }: EventsProjectsProps) 
                   <h3 className="text-xl font-bold text-navy font-heading">{event.title}</h3>
                   <p className="text-sm text-slate-600 leading-relaxed">{event.description}</p>
                 </div>
-                <Button
-                  variant="accent"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.dispatchEvent(new CustomEvent('force-nav', { detail: { page: 'contact' } }));
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                >
-                  Register Interest
-                </Button>
               </Card>
             ))}
 

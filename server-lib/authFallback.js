@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import { supabase, SUPABASE_ENABLED } from './supabaseClient.js';
+import { supabase } from './supabaseClient.js';
+export const SUPABASE_ENABLED = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const FALLBACK_AUTH_EMAIL = (process.env.ADMIN_EMAIL || 'vendhanftpwatch@gmail.com').trim().toLowerCase();
 const FALLBACK_AUTH_PASSWORD = (process.env.ADMIN_PASSWORD || 'vendhan123').trim();

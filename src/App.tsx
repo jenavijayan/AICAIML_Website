@@ -91,8 +91,8 @@ function AppShell() {
     const handleNav = (e: any) => {
       if (e.detail && e.detail.page) setCurrentPage(e.detail.page);
     };
-    window.addEventListener('force-nav', handleNav);
-    return () => window.removeEventListener('force-nav', handleNav);
+    window.addEventListener('force-nav', handleNav as EventListener);
+    return () => window.removeEventListener('force-nav', handleNav as EventListener);
   }, []);
 
   return (
