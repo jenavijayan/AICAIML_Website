@@ -151,6 +151,17 @@ async function getSupabaseUser(email, password) {
   if (error || !Array.isArray(data) || data.length === 0) return null;
 
   for (const row of data) {
+    const isAdmin = String(row.role || '').toLowerCase() === 'admin';
+    const hasHash = row.password_hash && row.password_salt;
+
+    if (!hasHash && isAdmin) {
+      const adminPassword = String(process.env.ADMIN_PASSWORD || '').trim();
+      if (adminPassword && password === adminPassword) {
+        return toPublicUser(row);
+      }
+      continue;
+    }
+
     try {
       if (verifyPassword(password, row.password_hash, row.password_salt)) {
         return toPublicUser(row);
